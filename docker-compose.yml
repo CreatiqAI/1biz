@@ -1,0 +1,100 @@
+services:
+  # ─── Database ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mybiz
+      POSTGRES_USER: mybiz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mybiz -d mybiz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ─── Cache / Queue ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── NestJS API ───────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://mybiz:${POSTGRES_PASSWORD:-changeme123}@postgres:5432/mybiz?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRES: 15m
+      JWT_REFRESH_EXPIRES_DAYS: 30
+      FRONTEND_URL: ${APP_URL:-http://localhost:3000}
+      REDIS_URL: redis://redis:6379
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-false}
+      WHATSAPP_TENANT_ID: ${WHATSAPP_TENANT_ID:-}
+      WHATSAPP_TENANT_SCHEMA: ${WHATSAPP_TENANT_SCHEMA:-}
+      WHATSAPP_USER_ID: ${WHATSAPP_USER_ID:-}
+      WHATSAPP_ALLOWED_NUMBERS: ${WHATSAPP_ALLOWED_NUMBERS:-}
+    volumes:
+      - whatsapp_session:/app/whatsapp-session
+    # Port 3001 is internal-only; web container proxies via http://api:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Next.js Frontend ─────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Server-side env var used by next.config.ts rewrites to route
+      # /api/v1/* → internal API container. Not exposed to the browser.
+      API_INTERNAL_URL: http://api:3001
+    # Not exposed to host — Nginx sits in front
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ─── Nginx Reverse Proxy ───────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  # ─── Cloudflare Quick Tunnel ─────────────────────────────────────────────────
+  # No account or signup needed. Generates a free random *.trycloudflare.com URL.
+  # After starting, run: docker compose logs cloudflared
+  # Look for a line like: https://some-random-words.trycloudflare.com
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --protocol http2 --url http://nginx:80
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  whatsapp_session:

@@ -1,0 +1,179 @@
+// MyBiz Suite — Prisma Schema
+// Multi-tenant: Public schema stores tenants, billing, super-admins
+// Each tenant gets their own PostgreSQL schema (managed via raw SQL migrations)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public"]
+}
+
+// ─────────────────────────────────────────────
+// PUBLIC SCHEMA — Platform-level data
+// ─────────────────────────────────────────────
+
+/// A company/organization using the platform
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique // used in subdomain: slug.mybiz.com.my
+  schema      String   @unique // PostgreSQL schema name: tenant_<uuid_short>
+  plan        Plan     @default(STARTER)
+  isActive    Boolean  @default(true)
+  trialEndsAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        TenantUser[]
+  subscription Subscription?
+  settings     TenantSettings?
+
+  @@map("tenants")
+  @@schema("public")
+}
+
+/// Platform-level user record (authentication identity)
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  avatarUrl    String?
+  phone        String?
+  isActive     Boolean   @default(true)
+  isSuperAdmin Boolean   @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenants      TenantUser[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+  @@schema("public")
+}
+
+/// Links a user to a tenant with roles
+model TenantUser {
+  id        String   @id @default(uuid())
+  userId    String
+  tenantId  String
+  roles     String[] // e.g., ["admin", "accountant"]
+  isOwner   Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@map("tenant_users")
+  @@schema("public")
+}
+
+/// JWT refresh tokens (for token rotation)
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+  @@schema("public")
+}
+
+/// Tenant settings (company profile)
+model TenantSettings {
+  id                   String   @id @default(uuid())
+  tenantId             String   @unique
+  companyName          String
+  companyRegNo         String?  // SSM registration number
+  taxRegNo             String?  // SST registration number
+  sstRegistered        Boolean  @default(false)
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  state                String?
+  postcode             String?
+  country              String   @default("MY")
+  phone                String?
+  email                String?
+  website              String?
+  logoUrl              String?
+  currency             String   @default("MYR")
+  timezone             String   @default("Asia/Kuala_Lumpur")
+  dateFormat           String   @default("DD/MM/YYYY")
+  fiscalYearStart      Int      @default(1) // 1 = January
+  invoicePrefix        String   @default("INV")
+  invoiceNextNumber    Int      @default(1)
+  quotePrefix          String   @default("QUO")
+  quoteNextNumber      Int      @default(1)
+  poPrefix             String   @default("PO")
+  poNextNumber         Int      @default(1)
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_settings")
+  @@schema("public")
+}
+
+/// Subscription billing
+model Subscription {
+  id               String             @id @default(uuid())
+  tenantId         String             @unique
+  plan             Plan
+  status           SubscriptionStatus @default(ACTIVE)
+  billingCycle     BillingCycle       @default(MONTHLY)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean          @default(false)
+  stripeSubId      String?            // Stripe subscription ID
+  billplzBillId    String?            // Billplz bill ID
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Plan {
+  STARTER    // RM 99/mo — Accounting + Inventory, 3 users
+  GROWTH     // RM 299/mo — + CRM + HR, 10 users
+  BUSINESS   // RM 599/mo — All modules, 25 users
+  ENTERPRISE // Custom
+
+  @@schema("public")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+
+  @@schema("public")
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+
+  @@schema("public")
+}

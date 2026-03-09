@@ -1,0 +1,22 @@
+# Dependencies — reinstalled inside Docker
+**/node_modules
+
+# Build outputs — rebuilt inside Docker
+**/.next
+**/dist
+**/.turbo
+
+# Local env files — replaced by docker-compose environment
+apps/web/.env.local
+apps/api/.env
+.env
+
+# Git & OS
+**/.git
+**/.DS_Store
+**/*.log
+**/npm-debug.log*
+
+# Editor
+**/.vscode
+**/.idea
