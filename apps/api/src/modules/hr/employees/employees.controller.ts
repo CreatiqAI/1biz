@@ -69,4 +69,57 @@ export class EmployeesController {
   async remove(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
     return { success: true, data: await this.svc.remove(user.tenantSchema, id) }
   }
+
+  // ── Employment History ────────────────────────────────────────────────────────
+
+  @Get(':id/history')
+  @RequirePermissions(Permission.HR_VIEW)
+  @ApiOperation({ summary: 'Get employment history for an employee' })
+  async getHistory(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
+    return { success: true, data: await this.svc.getHistory(user.tenantSchema, id) }
+  }
+
+  @Post(':id/job-change')
+  @Audit('employment_history')
+  @RequirePermissions(Permission.HR_UPDATE)
+  @ApiOperation({ summary: 'Record a job change (transfer, promotion, salary revision)' })
+  async recordJobChange(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() body: {
+      changeType: 'TRANSFER' | 'PROMOTION' | 'SALARY_CHANGE' | 'DEMOTION'
+      effectiveDate: string
+      departmentId?: string
+      positionId?: string
+      employmentType?: string
+      basicSalarySen?: number
+      reason?: string
+    },
+  ) {
+    return { success: true, data: await this.svc.recordJobChange(user.tenantSchema, id, body, user.userId) }
+  }
+
+  @Get(':id/termination-preview')
+  @RequirePermissions(Permission.HR_VIEW)
+  @ApiOperation({ summary: 'Preview termination benefits (notice period + benefits calculation)' })
+  @ApiQuery({ name: 'terminationDate', required: true })
+  async terminationPreview(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Query('terminationDate') terminationDate: string,
+  ) {
+    return { success: true, data: await this.svc.calculateTermination(user.tenantSchema, id, terminationDate) }
+  }
+
+  @Post(':id/terminate')
+  @Audit('employee', 'TERMINATE')
+  @RequirePermissions(Permission.HR_UPDATE)
+  @ApiOperation({ summary: 'Process employee termination with benefits calculation' })
+  async terminate(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() body: { terminationDate: string; reason?: string },
+  ) {
+    return { success: true, data: await this.svc.processTermination(user.tenantSchema, id, body, user.userId) }
+  }
 }

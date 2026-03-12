@@ -47,6 +47,51 @@ const ICONS: Record<string, React.ReactNode> = {
     </>
   ),
 
+  bill: (
+    <>
+      <rect x="2" y="1" width="12" height="14" rx="2" fill="currentColor" opacity=".18" />
+      <rect x="4" y="4" width="8" height="1.2" rx=".6" fill="currentColor" />
+      <rect x="4" y="6.5" width="8" height="1.2" rx=".6" fill="currentColor" opacity=".5" />
+      <rect x="4" y="9" width="5" height="1.2" rx=".6" fill="currentColor" opacity=".3" />
+      <path d="M10 11.5l1.5 1.5 2.5-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </>
+  ),
+  journal: (
+    <>
+      <rect x="3" y="1" width="11" height="14" rx="2" fill="currentColor" opacity=".18" />
+      <rect x="1" y="3" width="3" height="10" rx="1" fill="currentColor" opacity=".35" />
+      <rect x="5.5" y="4" width="6" height="1.2" rx=".6" fill="currentColor" />
+      <rect x="5.5" y="6.5" width="6" height="1.2" rx=".6" fill="currentColor" opacity=".5" />
+      <rect x="5.5" y="9" width="4" height="1.2" rx=".6" fill="currentColor" opacity=".3" />
+    </>
+  ),
+  report: (
+    <>
+      <rect x="2" y="1" width="12" height="14" rx="2" fill="currentColor" opacity=".15" />
+      <rect x="4" y="3.5" width="3.5" height="5" rx="1" fill="currentColor" opacity=".3" />
+      <rect x="8.5" y="5.5" width="3.5" height="3" rx="1" fill="currentColor" opacity=".5" />
+      <path d="M4 12h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".4" fill="none" />
+      <path d="M5.75 8.5V5M10.25 8.5V7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+    </>
+  ),
+  bank: (
+    <>
+      <path d="M8 1.5L1 5.5h14L8 1.5z" fill="currentColor" opacity=".35" />
+      <rect x="1" y="13" width="14" height="2" rx=".5" fill="currentColor" opacity=".25" />
+      <rect x="3" y="6" width="2" height="7" rx=".5" fill="currentColor" opacity=".5" />
+      <rect x="7" y="6" width="2" height="7" rx=".5" fill="currentColor" />
+      <rect x="11" y="6" width="2" height="7" rx=".5" fill="currentColor" opacity=".5" />
+    </>
+  ),
+  compliance: (
+    <>
+      <rect x="2" y="1" width="12" height="14" rx="2" fill="currentColor" opacity=".15" />
+      <path d="M5.5 8l2 2 3.5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <rect x="4" y="3" width="8" height="1.2" rx=".6" fill="currentColor" opacity=".4" />
+      <rect x="4" y="12" width="5" height="1.2" rx=".6" fill="currentColor" opacity=".3" />
+    </>
+  ),
+
   /* ── CRM ── */
   target: (
     <>
@@ -140,6 +185,21 @@ const ICONS: Record<string, React.ReactNode> = {
       <circle cx="4.5" cy="10.5" r="1" fill="currentColor" />
       <circle cx="8" cy="10.5" r="1" fill="currentColor" opacity=".5" />
       <circle cx="11.5" cy="10.5" r="1" fill="currentColor" opacity=".3" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="8" cy="8" r="7" fill="currentColor" opacity=".18" />
+      <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.2" fill="none" opacity=".5" />
+      <path d="M8 4v4.5l3 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </>
+  ),
+  receipt: (
+    <>
+      <path d="M3 1.5h10a1 1 0 011 1v12l-2-1-2 1-2-1-2 1-2-1-2 1V2.5a1 1 0 011-1z" fill="currentColor" opacity=".18" />
+      <rect x="5" y="5" width="6" height="1.2" rx=".6" fill="currentColor" />
+      <rect x="5" y="7.5" width="6" height="1.2" rx=".6" fill="currentColor" opacity=".5" />
+      <rect x="5" y="10" width="4" height="1.2" rx=".6" fill="currentColor" opacity=".3" />
     </>
   ),
   banknote: (

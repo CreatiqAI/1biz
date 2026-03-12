@@ -53,4 +53,36 @@ export class InvoicesController {
   ) {
     return { success: true, data: await this.invoicesService.updateStatus(user.tenantSchema, id, body.status, user.userId) }
   }
+
+  @Post(':id/credit-note')
+  @Audit('invoice', 'CREATE')
+  @RequirePermissions(Permission.ACCOUNTING_CREATE)
+  @ApiOperation({ summary: 'Create a Credit Note against an invoice' })
+  async createCreditNote(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() body: { reason: string; lines: { description: string; quantity: number; unitPriceSen: number; discountPercent?: number; sstRate?: number; accountId?: string }[] },
+  ) {
+    return {
+      success: true,
+      data: await this.invoicesService.createCreditDebitNote(user.tenantSchema, id, 'CREDIT_NOTE', body, user.userId, user.tenantId),
+      message: 'Credit Note created successfully',
+    }
+  }
+
+  @Post(':id/debit-note')
+  @Audit('invoice', 'CREATE')
+  @RequirePermissions(Permission.ACCOUNTING_CREATE)
+  @ApiOperation({ summary: 'Create a Debit Note against an invoice' })
+  async createDebitNote(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() body: { reason: string; lines: { description: string; quantity: number; unitPriceSen: number; discountPercent?: number; sstRate?: number; accountId?: string }[] },
+  ) {
+    return {
+      success: true,
+      data: await this.invoicesService.createCreditDebitNote(user.tenantSchema, id, 'DEBIT_NOTE', body, user.userId, user.tenantId),
+      message: 'Debit Note created successfully',
+    }
+  }
 }

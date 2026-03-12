@@ -9,6 +9,12 @@ import { LeaveController } from './leave/leave.controller'
 import { LeaveService } from './leave/leave.service'
 import { PayrollController } from './payroll/payroll.controller'
 import { PayrollService } from './payroll/payroll.service'
+import { HolidaysController } from './holidays/holidays.controller'
+import { HolidaysService } from './holidays/holidays.service'
+import { AttendanceController } from './attendance/attendance.controller'
+import { AttendanceService } from './attendance/attendance.service'
+import { ClaimsController } from './claims/claims.controller'
+import { ClaimsService } from './claims/claims.service'
 
 @Module({
   controllers: [
@@ -17,6 +23,9 @@ import { PayrollService } from './payroll/payroll.service'
     EmployeesController,
     LeaveController,
     PayrollController,
+    HolidaysController,
+    AttendanceController,
+    ClaimsController,
   ],
   providers: [
     DepartmentsService,
@@ -24,6 +33,9 @@ import { PayrollService } from './payroll/payroll.service'
     EmployeesService,
     LeaveService,
     PayrollService,
+    HolidaysService,
+    AttendanceService,
+    ClaimsService,
   ],
   exports: [
     DepartmentsService,
@@ -31,6 +43,9 @@ import { PayrollService } from './payroll/payroll.service'
     EmployeesService,
     LeaveService,
     PayrollService,
+    HolidaysService,
+    AttendanceService,
+    ClaimsService,
   ],
 })
 export class HrModule {}

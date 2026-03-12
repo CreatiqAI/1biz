@@ -1,37 +1,49 @@
 /**
  * Malaysian Statutory Payroll Calculations
- * Covers EPF (KWSP), SOCSO (PERKESO), EIS, and PCB (MTD)
+ * Covers EPF (KWSP), SOCSO (PERKESO), EIS, PCB (MTD), and HRD Corp
  *
- * All monetary values are in cents (1 MYR = 100 cents).
+ * All monetary values are in sen (1 MYR = 100 sen).
  * Reference: LHDN, KWSP, PERKESO official guidelines (2024)
  */
 
 export interface StatutoryResult {
-  epfEmployee: number   // cents
-  epfEmployer: number   // cents
-  socsoEmployee: number // sen
-  socsoEmployer: number // sen
-  eisEmployee: number   // cents
-  eisEmployer: number   // cents
-  pcb: number           // cents
+  epfEmployee: number
+  epfEmployer: number
+  socsoEmployee: number
+  socsoEmployer: number
+  eisEmployee: number
+  eisEmployer: number
+  pcb: number
+}
+
+export interface PCBProfile {
+  maritalStatus?: string   // SINGLE, MARRIED, DIVORCED, WIDOWED
+  spouseWorking?: boolean
+  childrenCount?: number
 }
 
 /**
  * Calculate EPF (KWSP) contributions.
  *
- * Employee:
- *   - Age < 60: 9% of gross salary
- *   - Age >= 60: 0% (employer still contributes at reduced rate)
+ * Malaysian employees:
+ *   Age < 60:  Employee 11%, Employer 13% (≤RM5,000) or 12% (>RM5,000)
+ *   Age ≥ 60:  Employee 0%, Employer 4%
  *
- * Employer:
- *   - Age < 60, wages <= RM5,000: 13%
- *   - Age < 60, wages >  RM5,000: 12%
- *   - Age >= 60: 4%
+ * Non-Malaysian employees:
+ *   Employee RM5 flat, Employer 5% of gross
  */
 export function calculateEPF(
   grossSalarySen: number,
   ageYears: number,
+  isMalaysian: boolean = true,
 ): { employee: number; employer: number } {
+  if (!isMalaysian) {
+    return {
+      employee: 500, // RM5 flat = 500 sen
+      employer: Math.round(grossSalarySen * 0.05),
+    }
+  }
+
   if (ageYears >= 60) {
     return {
       employee: 0,
@@ -39,8 +51,8 @@ export function calculateEPF(
     }
   }
 
-  const employee = Math.round(grossSalarySen * 0.09)
-  const employerRate = grossSalarySen <= 500_000 ? 0.13 : 0.12 // RM5,000 = 500,000 sen
+  const employee = Math.round(grossSalarySen * 0.11) // 11% standard rate
+  const employerRate = grossSalarySen <= 500_000 ? 0.13 : 0.12
   const employer = Math.round(grossSalarySen * employerRate)
 
   return { employee, employer }
@@ -49,13 +61,13 @@ export function calculateEPF(
 /**
  * Calculate SOCSO (PERKESO) contributions.
  *
- * Wage ceiling: RM4,000/month (400,000 sen)
+ * Wage ceiling: RM6,000/month (600,000 sen) — updated 2024
  *
- * Employees < 60 — Insured Scheme (Schedule 1):
+ * Employees < 60 — Insured Scheme (Category 1):
  *   Employee:  0.5%  of SOCSO wages
  *   Employer:  1.75% of SOCSO wages
  *
- * Employees >= 60 — Employment Injury Scheme only (Schedule 2):
+ * Employees ≥ 60 — Employment Injury Scheme only (Category 2):
  *   Employee:  0% (exempt)
  *   Employer:  1.25% of SOCSO wages
  */
@@ -63,7 +75,7 @@ export function calculateSOCSO(
   grossSalarySen: number,
   ageYears: number,
 ): { employee: number; employer: number } {
-  const socsoWageSen = Math.min(grossSalarySen, 400_000)
+  const socsoWageSen = Math.min(grossSalarySen, 600_000) // RM6,000 ceiling
 
   if (ageYears >= 60) {
     return {
@@ -81,9 +93,9 @@ export function calculateSOCSO(
 /**
  * Calculate EIS (Employment Insurance System) contributions.
  *
- * Wage ceiling: RM4,000/month (400,000 sen)
+ * Wage ceiling: RM6,000/month (600,000 sen) — updated 2024
  * Both employee and employer: 0.2% each
- * Employees >= 57: exempt from EIS
+ * Employees ≥ 57: exempt from EIS
  */
 export function calculateEIS(
   grossSalarySen: number,
@@ -93,7 +105,7 @@ export function calculateEIS(
     return { employee: 0, employer: 0 }
   }
 
-  const eisWageSen = Math.min(grossSalarySen, 400_000)
+  const eisWageSen = Math.min(grossSalarySen, 600_000) // RM6,000 ceiling
   const amount = Math.round(eisWageSen * 0.002)
 
   return { employee: amount, employer: amount }
@@ -102,28 +114,46 @@ export function calculateEIS(
 /**
  * Calculate PCB / MTD (Monthly Tax Deduction).
  *
- * Simplified method:
+ * Enhanced method with marital status and dependant reliefs:
  *   1. Annualise the gross monthly salary.
- *   2. Deduct personal relief (RM9,000) and EPF relief (up to RM4,000).
+ *   2. Deduct reliefs: personal (RM9,000), spouse (RM4,000 if not working),
+ *      children (RM2,000 each), EPF (up to RM4,000).
  *   3. Apply progressive tax brackets (2024 rates).
  *   4. Divide annual tax by 12 to get monthly PCB.
- *
- * Note: A full implementation requires marital status, spouse working status,
- * number of children, and other reliefs. This is a baseline single-individual
- * calculation suitable for the first release.
  */
 export function calculatePCB(
   grossSalarySen: number,
   epfEmployeeSen: number,
+  profile?: PCBProfile,
 ): number {
   const grossMonthlyRM = grossSalarySen / 100
   const annualIncomeRM = grossMonthlyRM * 12
 
-  // Standard reliefs (individual with no dependants)
+  // Reliefs
   const personalRelief = 9_000
   const epfRelief = Math.min((epfEmployeeSen / 100) * 12, 4_000)
-  const chargeableIncome = Math.max(0, annualIncomeRM - personalRelief - epfRelief)
 
+  let spouseRelief = 0
+  let childRelief = 0
+
+  if (profile) {
+    // Spouse relief: RM4,000 if married and spouse not working
+    if (
+      (profile.maritalStatus === 'MARRIED') &&
+      profile.spouseWorking === false
+    ) {
+      spouseRelief = 4_000
+    }
+    // Child relief: RM2,000 per child (under 18, simplified)
+    if (profile.childrenCount && profile.childrenCount > 0) {
+      childRelief = profile.childrenCount * 2_000
+    }
+  }
+
+  const totalRelief = personalRelief + epfRelief + spouseRelief + childRelief
+  const chargeableIncome = Math.max(0, annualIncomeRM - totalRelief)
+
+  // 2024 progressive tax brackets
   let annualTax = 0
 
   if (chargeableIncome <= 5_000) {
@@ -155,6 +185,102 @@ export function calculatePCB(
 }
 
 /**
+ * Calculate HRD Corp levy for the company.
+ * ≥10 Malaysian employees: 1% of total wages (compulsory)
+ * 5-9 Malaysian employees: 0.5% of total wages (optional)
+ */
+export function calculateHRDCorpLevy(
+  totalMalaysianEmployeeWagesSen: number,
+  malaysianEmployeeCount: number,
+  optedIn: boolean = false,
+): number {
+  if (malaysianEmployeeCount >= 10) {
+    return Math.round(totalMalaysianEmployeeWagesSen * 0.01)
+  }
+  if (malaysianEmployeeCount >= 5 && optedIn) {
+    return Math.round(totalMalaysianEmployeeWagesSen * 0.005)
+  }
+  return 0
+}
+
+/**
+ * Calculate overtime pay.
+ * Normal day OT: ≥1.5x hourly rate
+ * Rest day OT: ≥2x hourly rate
+ * Public holiday OT: ≥3x hourly rate
+ */
+export function calculateOvertimePay(
+  basicSalarySen: number,
+  normalOtHours: number,
+  restDayOtHours: number,
+  phOtHours: number,
+): { normalOtSen: number; restDayOtSen: number; phOtSen: number; totalOtSen: number } {
+  // Hourly rate = monthly salary / 26 days / 8 hours
+  const hourlyRateSen = Math.round(basicSalarySen / 26 / 8)
+
+  const normalOtSen = Math.round(hourlyRateSen * 1.5 * normalOtHours)
+  const restDayOtSen = Math.round(hourlyRateSen * 2.0 * restDayOtHours)
+  const phOtSen = Math.round(hourlyRateSen * 3.0 * phOtHours)
+
+  return {
+    normalOtSen,
+    restDayOtSen,
+    phOtSen,
+    totalOtSen: normalOtSen + restDayOtSen + phOtSen,
+  }
+}
+
+/**
+ * Calculate termination notice period (weeks) based on years of service.
+ */
+export function getTerminationNoticeWeeks(yearsOfService: number): number {
+  if (yearsOfService < 2) return 4
+  if (yearsOfService < 5) return 6
+  return 8
+}
+
+/**
+ * Calculate termination/layoff benefits.
+ * Must have ≥12 months continuous service.
+ * <2 years: 10 days wages per year
+ * 2-5 years: 15 days wages per year
+ * >5 years: 20 days wages per year
+ */
+export function calculateTerminationBenefits(
+  basicSalarySen: number,
+  yearsOfService: number,
+): number {
+  if (yearsOfService < 1) return 0
+
+  const dailyWageSen = Math.round(basicSalarySen / 26)
+  let daysPerYear: number
+
+  if (yearsOfService < 2) daysPerYear = 10
+  else if (yearsOfService < 5) daysPerYear = 15
+  else daysPerYear = 20
+
+  return Math.round(dailyWageSen * daysPerYear * yearsOfService)
+}
+
+/**
+ * Get leave entitlement days based on years of service (Employment Act 1955).
+ */
+export function getLeaveEntitlement(
+  yearsOfService: number,
+  type: 'ANNUAL' | 'SICK',
+): number {
+  if (type === 'ANNUAL') {
+    if (yearsOfService < 2) return 8
+    if (yearsOfService < 5) return 12
+    return 16
+  }
+  // SICK (outpatient)
+  if (yearsOfService < 2) return 14
+  if (yearsOfService < 5) return 18
+  return 22
+}
+
+/**
  * Compute all statutory deductions and contributions for one employee in one month.
  */
 export function computeStatutory(
@@ -163,16 +289,24 @@ export function computeStatutory(
   epfOptedOut: boolean,
   socsoOptedOut: boolean,
   eisOptedOut: boolean,
+  isMalaysian: boolean = true,
+  pcbProfile?: PCBProfile,
 ): StatutoryResult {
   const today = new Date()
   const ageYears = dateOfBirth
     ? Math.floor((today.getTime() - dateOfBirth.getTime()) / (365.25 * 24 * 3600 * 1000))
-    : 30 // default assumption if DOB unknown
+    : 30
 
-  const epf = epfOptedOut ? { employee: 0, employer: 0 } : calculateEPF(grossSalarySen, ageYears)
-  const socso = socsoOptedOut ? { employee: 0, employer: 0 } : calculateSOCSO(grossSalarySen, ageYears)
-  const eis = eisOptedOut ? { employee: 0, employer: 0 } : calculateEIS(grossSalarySen, ageYears)
-  const pcb = calculatePCB(grossSalarySen, epf.employee)
+  const epf = epfOptedOut
+    ? { employee: 0, employer: 0 }
+    : calculateEPF(grossSalarySen, ageYears, isMalaysian)
+  const socso = socsoOptedOut
+    ? { employee: 0, employer: 0 }
+    : calculateSOCSO(grossSalarySen, ageYears)
+  const eis = eisOptedOut
+    ? { employee: 0, employer: 0 }
+    : calculateEIS(grossSalarySen, ageYears)
+  const pcb = calculatePCB(grossSalarySen, epf.employee, pcbProfile)
 
   return {
     epfEmployee: epf.employee,

@@ -279,4 +279,107 @@ export class InvoicesService {
     )
     return rows.length > 0 && rows[0].track_inventory
   }
+
+  /**
+   * Create a Credit Note or Debit Note linked to an original invoice.
+   * Credit Note: reduces customer balance (refund/discount)
+   * Debit Note: increases customer balance (additional charges)
+   */
+  async createCreditDebitNote(
+    tenantSchema: string,
+    originalInvoiceId: string,
+    type: 'CREDIT_NOTE' | 'DEBIT_NOTE',
+    dto: { reason: string; lines: InvoiceLineInput[] },
+    userId: string,
+    tenantId: string,
+  ) {
+    // Verify original invoice exists
+    const origRows = await this.prisma.$queryRawUnsafe<{ id: string; contact_id: string; currency: string; balance_sen: string; invoice_no: string }[]>(
+      `SELECT id, contact_id, currency, balance_sen::text, invoice_no FROM "${tenantSchema}".invoices
+       WHERE id = $1::uuid AND deleted_at IS NULL`,
+      originalInvoiceId,
+    )
+    if (!origRows.length) throw new NotFoundException('Original invoice not found')
+    const orig = origRows[0]
+
+    // Generate number
+    const prefix = type === 'CREDIT_NOTE' ? 'CN' : 'DN'
+    const countRows = await this.prisma.$queryRawUnsafe<{ count: string }[]>(
+      `SELECT COUNT(*)::text as count FROM "${tenantSchema}".invoices WHERE type = $1`,
+      type,
+    )
+    const seq = String(Number(countRows[0].count) + 1).padStart(5, '0')
+    const now = new Date()
+    const noteNo = `${prefix}-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${seq}`
+
+    // Calculate totals
+    let subtotalSen = 0
+    let sstAmountSen = 0
+    for (const line of dto.lines) {
+      const discountFactor = 1 - (line.discountPercent ?? 0) / 100
+      const lineSubtotal = Math.round(line.quantity * line.unitPriceSen * discountFactor)
+      const lineSst = Math.round(lineSubtotal * (line.sstRate ?? 0) / 100)
+      subtotalSen += lineSubtotal
+      sstAmountSen += lineSst
+    }
+    const totalSen = subtotalSen + sstAmountSen
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Create the CN/DN record
+      const noteRows = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `INSERT INTO "${tenantSchema}".invoices
+           (invoice_no, type, contact_id, issue_date, status, currency,
+            subtotal_sen, sst_amount_sen, total_sen, balance_sen,
+            notes, created_by)
+         VALUES ($1,$2,$3::uuid,$4::date,'SENT',$5,$6,$7,$8,$8,$9,$10::uuid)
+         RETURNING id`,
+        noteNo, type, orig.contact_id, now.toISOString().split('T')[0],
+        orig.currency, subtotalSen, sstAmountSen, totalSen,
+        `${type === 'CREDIT_NOTE' ? 'Credit Note' : 'Debit Note'} for ${orig.invoice_no}: ${dto.reason}`,
+        userId,
+      )
+      const noteId = noteRows[0].id
+
+      // Create line items
+      for (let i = 0; i < dto.lines.length; i++) {
+        const line = dto.lines[i]
+        const discountFactor = 1 - (line.discountPercent ?? 0) / 100
+        const lineSubtotal = Math.round(line.quantity * line.unitPriceSen * discountFactor)
+        const lineSst = Math.round(lineSubtotal * (line.sstRate ?? 0) / 100)
+        const lineTotal = lineSubtotal + lineSst
+
+        await tx.$queryRawUnsafe(
+          `INSERT INTO "${tenantSchema}".invoice_lines
+             (invoice_id, product_id, description, quantity, unit_price_sen,
+              discount_percent, subtotal_sen, sst_rate, sst_amount_sen, total_sen,
+              account_id, sort_order)
+           VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11::uuid,$12)`,
+          noteId, line.productId ?? null, line.description,
+          line.quantity, line.unitPriceSen, line.discountPercent ?? 0,
+          lineSubtotal, line.sstRate ?? 0, lineSst, lineTotal,
+          line.accountId ?? null, i,
+        )
+      }
+
+      // For Credit Notes: reduce original invoice balance
+      if (type === 'CREDIT_NOTE') {
+        const currentBalance = BigInt(orig.balance_sen)
+        const creditAmount = BigInt(totalSen)
+        const newBalance = currentBalance - creditAmount < 0n ? 0n : currentBalance - creditAmount
+        const newPaid = BigInt(totalSen) // credit note counts as "payment"
+        const newStatus = newBalance <= 0n ? 'PAID' : 'PARTIAL'
+
+        await tx.$queryRawUnsafe(
+          `UPDATE "${tenantSchema}".invoices
+           SET paid_sen = paid_sen + $1, balance_sen = $2, status = $3, updated_at = NOW()
+           WHERE id = $4::uuid`,
+          Number(creditAmount), Number(newBalance), newStatus, originalInvoiceId,
+        )
+      }
+
+      return { id: noteId, noteNo, type, totalSen, originalInvoiceId }
+    })
+
+    return result
+  }
 }

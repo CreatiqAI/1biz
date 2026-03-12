@@ -13,9 +13,18 @@ import { DepartmentsService } from '../hr/departments/departments.service'
 import { EmployeesService } from '../hr/employees/employees.service'
 import { LeaveService } from '../hr/leave/leave.service'
 import { PayrollService } from '../hr/payroll/payroll.service'
+import { HolidaysService } from '../hr/holidays/holidays.service'
+import { AttendanceService } from '../hr/attendance/attendance.service'
+import { ClaimsService } from '../hr/claims/claims.service'
 import { LeadsService } from '../crm/leads.service'
 import { OpportunitiesService } from '../crm/opportunities.service'
 import { QuotationsService } from '../crm/quotations.service'
+import { JournalsService } from '../accounting/journals.service'
+import { BillsService } from '../accounting/bills.service'
+import { ReportsService } from '../accounting/reports.service'
+import { BankingService } from '../accounting/banking.service'
+import { TaxService } from '../accounting/tax.service'
+import { ComplianceService } from '../accounting/compliance.service'
 import { DashboardService } from '../dashboard/dashboard.service'
 import { CHAT_TOOLS, ToolName } from './chat-tools'
 import { buildSystemPrompt } from './chat-system-prompt'
@@ -79,9 +88,18 @@ export class ChatService {
     private readonly employeesService: EmployeesService,
     private readonly leaveService: LeaveService,
     private readonly payrollService: PayrollService,
+    private readonly holidaysService: HolidaysService,
+    private readonly attendanceService: AttendanceService,
+    private readonly claimsService: ClaimsService,
     private readonly leadsService: LeadsService,
     private readonly opportunitiesService: OpportunitiesService,
     private readonly quotationsService: QuotationsService,
+    private readonly journalsService: JournalsService,
+    private readonly billsService: BillsService,
+    private readonly reportsService: ReportsService,
+    private readonly bankingService: BankingService,
+    private readonly taxService: TaxService,
+    private readonly complianceService: ComplianceService,
     private readonly dashboardService: DashboardService,
   ) {
     this.anthropic = new Anthropic({
@@ -165,6 +183,49 @@ export class ChatService {
       create_quotation: 'Creating quotation',
       update_quotation_status: 'Updating quotation',
       convert_quotation_to_invoice: 'Converting quotation to invoice',
+      get_holidays: 'Looking up public holidays',
+      create_holiday: 'Creating public holiday',
+      seed_holidays: 'Seeding public holidays',
+      get_work_entries: 'Looking up work entries',
+      get_monthly_attendance: 'Looking up monthly attendance',
+      get_attendance_summary: 'Checking attendance summary',
+      record_work_entry: 'Recording work entry',
+      get_claim_types: 'Looking up claim types',
+      get_claims: 'Looking up claims',
+      submit_claim: 'Submitting claim',
+      approve_claim: 'Approving claim',
+      reject_claim: 'Rejecting claim',
+      get_employment_history: 'Looking up employment history',
+      record_job_change: 'Recording job change',
+      calculate_termination: 'Calculating termination benefits',
+      process_termination: 'Processing termination',
+      init_leave_balances: 'Initializing leave balances',
+      get_journals: 'Looking up journal entries',
+      get_bills: 'Looking up bills',
+      get_trial_balance: 'Generating trial balance',
+      get_profit_loss: 'Generating P&L report',
+      get_balance_sheet: 'Generating balance sheet',
+      get_ar_aging: 'Generating AR aging report',
+      get_ap_aging: 'Generating AP aging report',
+      get_bank_accounts: 'Looking up bank accounts',
+      get_bank_transactions: 'Looking up bank transactions',
+      get_tax_codes: 'Looking up tax codes',
+      get_compliance_dashboard: 'Checking compliance status',
+      get_compliance_obligations: 'Looking up compliance obligations',
+      create_journal_entry: 'Creating journal entry',
+      post_journal_entry: 'Posting journal entry',
+      reverse_journal_entry: 'Reversing journal entry',
+      create_bill: 'Creating bill',
+      approve_bill: 'Approving bill',
+      pay_bill: 'Recording bill payment',
+      create_credit_note: 'Creating credit note',
+      create_debit_note: 'Creating debit note',
+      create_bank_account: 'Creating bank account',
+      create_bank_transaction: 'Creating bank transaction',
+      match_bank_transaction: 'Matching bank transaction',
+      seed_tax_codes: 'Seeding tax codes',
+      generate_monthly_obligations: 'Generating monthly obligations',
+      complete_compliance_obligation: 'Completing compliance obligation',
     }
     return map[name] || 'Processing'
   }
@@ -354,6 +415,105 @@ export class ChatService {
       case 'get_quotations':
         return this.quotationsService.findAll(tenantSchema, str(input.status))
 
+      // ─── Holidays ──────────────────────────────────────────────────────────
+      case 'get_holidays':
+        return this.holidaysService.findAll(tenantSchema, input.year ? Number(input.year) : undefined)
+
+      // ─── Attendance / Work Entries ──────────────────────────────────────────
+      case 'get_work_entries':
+        return this.attendanceService.getEntries(
+          tenantSchema,
+          str(input.employeeId) as string,
+          str(input.startDate) as string,
+          str(input.endDate) as string,
+        )
+
+      case 'get_monthly_attendance':
+        return this.attendanceService.getMonthlyEntries(
+          tenantSchema,
+          Number(input.year),
+          Number(input.month),
+        )
+
+      case 'get_attendance_summary':
+        return this.attendanceService.getMonthlySummary(
+          tenantSchema,
+          str(input.employeeId) as string,
+          Number(input.year),
+          Number(input.month),
+        )
+
+      // ─── Claims ────────────────────────────────────────────────────────────
+      case 'get_claims':
+        return this.claimsService.findAll(tenantSchema, str(input.employeeId), str(input.status))
+
+      case 'get_claim_types':
+        return this.claimsService.getClaimTypes(tenantSchema)
+
+      // ─── Employment History ────────────────────────────────────────────────
+      case 'get_employment_history':
+        return this.employeesService.getHistory(tenantSchema, str(input.employeeId) as string)
+
+      // ─── Termination preview (read-only) ───────────────────────────────────
+      case 'calculate_termination':
+        return this.employeesService.calculateTermination(
+          tenantSchema,
+          str(input.employeeId) as string,
+          str(input.terminationDate) as string,
+        )
+
+      // ─── Journals ──────────────────────────────────────────────────────────
+      case 'get_journals':
+        return this.journalsService.findAll(tenantSchema, str(input.status))
+
+      // ─── Bills (AP) ──────────────────────────────────────────────────────
+      case 'get_bills':
+        return this.billsService.findAll(tenantSchema, str(input.status))
+
+      // ─── Financial Reports ────────────────────────────────────────────────
+      case 'get_trial_balance':
+        return this.reportsService.getTrialBalance(tenantSchema, str(input.asOfDate) as string)
+
+      case 'get_profit_loss':
+        return this.reportsService.getProfitAndLoss(tenantSchema, str(input.startDate) as string, str(input.endDate) as string)
+
+      case 'get_balance_sheet':
+        return this.reportsService.getBalanceSheet(tenantSchema, str(input.asOfDate) as string)
+
+      case 'get_ar_aging':
+        return this.reportsService.getARAging(tenantSchema)
+
+      case 'get_ap_aging':
+        return this.reportsService.getAPAging(tenantSchema)
+
+      // ─── Banking ──────────────────────────────────────────────────────────
+      case 'get_bank_accounts':
+        return this.bankingService.findAllAccounts(tenantSchema)
+
+      case 'get_bank_transactions':
+        return this.bankingService.getTransactions(
+          tenantSchema,
+          str(input.bankAccountId) as string,
+          str(input.startDate),
+          str(input.endDate),
+        )
+
+      // ─── Tax Codes ────────────────────────────────────────────────────────
+      case 'get_tax_codes':
+        return this.taxService.findAll(tenantSchema)
+
+      // ─── Compliance ───────────────────────────────────────────────────────
+      case 'get_compliance_dashboard':
+        return this.complianceService.getDashboard(tenantSchema)
+
+      case 'get_compliance_obligations':
+        return this.complianceService.getObligations(
+          tenantSchema,
+          input.year ? Number(input.year) : undefined,
+          input.month ? Number(input.month) : undefined,
+          str(input.status),
+        )
+
       // ─── Confirmation passthrough ─────────────────────────────────────────────
       case 'confirm_action':
         this.logger.log(`confirm_action: action=${str(input.action)}, summary="${str(input.summary)?.slice(0, 80)}..."`)
@@ -398,6 +558,29 @@ export class ChatService {
       case 'update_lead_status':
       case 'create_opportunity':
       case 'update_opportunity_stage':
+      case 'create_holiday':
+      case 'seed_holidays':
+      case 'record_work_entry':
+      case 'submit_claim':
+      case 'approve_claim':
+      case 'reject_claim':
+      case 'record_job_change':
+      case 'process_termination':
+      case 'init_leave_balances':
+      case 'create_journal_entry':
+      case 'post_journal_entry':
+      case 'reverse_journal_entry':
+      case 'create_bill':
+      case 'approve_bill':
+      case 'pay_bill':
+      case 'create_credit_note':
+      case 'create_debit_note':
+      case 'create_bank_account':
+      case 'create_bank_transaction':
+      case 'match_bank_transaction':
+      case 'seed_tax_codes':
+      case 'generate_monthly_obligations':
+      case 'complete_compliance_obligation':
         return this.executeWrite(tenantSchema, userId, tenantId, name, input as Record<string, unknown>)
 
       default:
@@ -432,6 +615,29 @@ export class ChatService {
       create_quotation:      { entity: 'quotation',      auditAction: 'CREATE' },
       update_quotation_status:  { entity: 'quotation',   auditAction: 'UPDATE' },
       convert_quotation_to_invoice: { entity: 'quotation', auditAction: 'CREATE' },
+      create_holiday:        { entity: 'public_holiday',  auditAction: 'CREATE' },
+      seed_holidays:         { entity: 'public_holiday',  auditAction: 'SEED' },
+      record_work_entry:     { entity: 'work_entry',      auditAction: 'CREATE' },
+      submit_claim:          { entity: 'claim',           auditAction: 'CREATE' },
+      approve_claim:         { entity: 'claim',           auditAction: 'APPROVE' },
+      reject_claim:          { entity: 'claim',           auditAction: 'REJECT' },
+      record_job_change:     { entity: 'employment_history', auditAction: 'CREATE' },
+      process_termination:   { entity: 'employee',        auditAction: 'TERMINATE' },
+      init_leave_balances:   { entity: 'leave_balance',   auditAction: 'BULK_INIT' },
+      create_journal_entry:  { entity: 'journal_entry',   auditAction: 'CREATE' },
+      post_journal_entry:    { entity: 'journal_entry',   auditAction: 'UPDATE' },
+      reverse_journal_entry: { entity: 'journal_entry',   auditAction: 'UPDATE' },
+      create_bill:           { entity: 'bill',            auditAction: 'CREATE' },
+      approve_bill:          { entity: 'bill',            auditAction: 'APPROVE' },
+      pay_bill:              { entity: 'bill',            auditAction: 'CREATE' },
+      create_credit_note:    { entity: 'invoice',         auditAction: 'CREATE' },
+      create_debit_note:     { entity: 'invoice',         auditAction: 'CREATE' },
+      create_bank_account:   { entity: 'bank_account',    auditAction: 'CREATE' },
+      create_bank_transaction: { entity: 'bank_transaction', auditAction: 'CREATE' },
+      match_bank_transaction:  { entity: 'bank_transaction', auditAction: 'UPDATE' },
+      seed_tax_codes:        { entity: 'tax_code',        auditAction: 'SEED' },
+      generate_monthly_obligations: { entity: 'compliance_obligation', auditAction: 'GENERATE' },
+      complete_compliance_obligation: { entity: 'compliance_obligation', auditAction: 'UPDATE' },
     }
     return map[action] ?? { entity: action, auditAction: 'CREATE' }
   }
@@ -717,13 +923,305 @@ export class ChatService {
         )
         break
 
+      // ─── Holidays ──────────────────────────────────────────────────────────
+      case 'create_holiday':
+        writeResult = await this.holidaysService.create(tenantSchema, {
+          name: payload.name as string,
+          date: payload.date as string,
+          isMandatory: payload.isMandatory !== undefined ? Boolean(payload.isMandatory) : undefined,
+          state: (payload.state as string) || undefined,
+        })
+        break
+
+      case 'seed_holidays':
+        writeResult = await this.holidaysService.seedYear(tenantSchema, Number(payload.year))
+        break
+
+      // ─── Attendance / Work Entries ──────────────────────────────────────────
+      case 'record_work_entry':
+        writeResult = await this.attendanceService.upsertEntry(tenantSchema, {
+          employeeId: payload.employeeId as string,
+          date: payload.date as string,
+          normalHours: payload.normalHours !== undefined ? Number(payload.normalHours) : undefined,
+          overtimeHours: payload.overtimeHours !== undefined ? Number(payload.overtimeHours) : undefined,
+          restDayHours: payload.restDayHours !== undefined ? Number(payload.restDayHours) : undefined,
+          phHours: payload.phHours !== undefined ? Number(payload.phHours) : undefined,
+          isRestDay: payload.isRestDay !== undefined ? Boolean(payload.isRestDay) : undefined,
+          isPublicHoliday: payload.isPublicHoliday !== undefined ? Boolean(payload.isPublicHoliday) : undefined,
+          isAbsent: payload.isAbsent !== undefined ? Boolean(payload.isAbsent) : undefined,
+          isLate: payload.isLate !== undefined ? Boolean(payload.isLate) : undefined,
+          notes: (payload.notes as string) || undefined,
+        }, userId)
+        break
+
+      // ─── Claims ────────────────────────────────────────────────────────────
+      case 'submit_claim': {
+        const rawLines = payload.lines
+        let claimLines: any[]
+        if (typeof rawLines === 'string') {
+          claimLines = JSON.parse(rawLines)
+        } else if (Array.isArray(rawLines)) {
+          claimLines = rawLines
+        } else {
+          claimLines = []
+        }
+        writeResult = await this.claimsService.create(tenantSchema, {
+          employeeId: payload.employeeId as string,
+          claimDate: payload.claimDate as string,
+          notes: (payload.notes as string) || undefined,
+          lines: claimLines.map((l: any) => ({
+            claimTypeId: l.claimTypeId,
+            description: l.description,
+            amountSen: Number(l.amountSen),
+            receiptUrl: l.receiptUrl || undefined,
+            date: l.date,
+          })),
+        })
+        break
+      }
+
+      case 'approve_claim':
+        writeResult = await this.claimsService.approve(
+          tenantSchema,
+          payload.claimId as string,
+          userId,
+        )
+        break
+
+      case 'reject_claim':
+        writeResult = await this.claimsService.reject(
+          tenantSchema,
+          payload.claimId as string,
+          userId,
+          (payload.reason as string) || undefined,
+        )
+        break
+
+      // ─── Employment History & Termination ──────────────────────────────────
+      case 'record_job_change':
+        writeResult = await this.employeesService.recordJobChange(
+          tenantSchema,
+          payload.employeeId as string,
+          {
+            changeType: payload.changeType as 'TRANSFER' | 'PROMOTION' | 'SALARY_CHANGE' | 'DEMOTION',
+            effectiveDate: payload.effectiveDate as string,
+            departmentId: (payload.departmentId as string) || undefined,
+            positionId: (payload.positionId as string) || undefined,
+            basicSalarySen: payload.basicSalarySen ? Number(payload.basicSalarySen) : undefined,
+            reason: (payload.reason as string) || undefined,
+          },
+          userId,
+        )
+        break
+
+      case 'process_termination':
+        writeResult = await this.employeesService.processTermination(
+          tenantSchema,
+          payload.employeeId as string,
+          {
+            terminationDate: payload.terminationDate as string,
+            reason: (payload.reason as string) || undefined,
+          },
+          userId,
+        )
+        break
+
+      // ─── Leave Balances ────────────────────────────────────────────────────
+      case 'init_leave_balances':
+        writeResult = await this.leaveService.initAllEmployeeBalances(
+          tenantSchema,
+          Number(payload.year),
+        )
+        break
+
+      // ─── Journal Entries ────────────────────────────────────────────────────
+      case 'create_journal_entry': {
+        const rawLines = payload.lines
+        let jLines: any[]
+        if (typeof rawLines === 'string') {
+          jLines = JSON.parse(rawLines)
+        } else if (Array.isArray(rawLines)) {
+          jLines = rawLines
+        } else {
+          jLines = []
+        }
+        writeResult = await this.journalsService.create(tenantSchema, {
+          date: payload.date as string,
+          description: payload.description as string,
+          sourceType: ((payload.source as string) || 'MANUAL') as 'INVOICE' | 'PAYMENT' | 'PAYROLL' | 'MANUAL',
+          lines: jLines.map((l: any) => ({
+            accountId: l.accountId,
+            description: l.description || undefined,
+            debitSen: Number(l.debitSen ?? 0),
+            creditSen: Number(l.creditSen ?? 0),
+          })),
+        }, userId)
+        break
+      }
+
+      case 'post_journal_entry':
+        writeResult = await this.journalsService.post(
+          tenantSchema,
+          payload.journalId as string,
+          userId,
+        )
+        break
+
+      case 'reverse_journal_entry':
+        writeResult = await this.journalsService.reverse(
+          tenantSchema,
+          payload.journalId as string,
+          userId,
+        )
+        break
+
+      // ─── Bills (AP) ────────────────────────────────────────────────────────
+      case 'create_bill': {
+        const rawLines = payload.lines
+        let bLines: any[]
+        if (typeof rawLines === 'string') {
+          bLines = JSON.parse(rawLines)
+        } else if (Array.isArray(rawLines)) {
+          bLines = rawLines
+        } else {
+          bLines = []
+        }
+        writeResult = await this.billsService.create(tenantSchema, {
+          contactId: payload.contactId as string,
+          billDate: payload.billDate as string,
+          dueDate: (payload.dueDate as string) || undefined,
+          notes: (payload.notes as string) || undefined,
+          lines: bLines.map((l: any) => ({
+            description: l.description,
+            quantity: Number(l.quantity),
+            unitPriceSen: Number(l.unitPriceSen),
+            discountPercent: l.discountPercent ? Number(l.discountPercent) : 0,
+            sstRate: l.sstRate ? Number(l.sstRate) : 0,
+            accountId: l.accountId || undefined,
+          })),
+        }, userId)
+        break
+      }
+
+      case 'approve_bill':
+        writeResult = await this.billsService.approve(
+          tenantSchema,
+          payload.billId as string,
+          userId,
+        )
+        break
+
+      case 'pay_bill':
+        writeResult = await this.billsService.recordPayment(
+          tenantSchema,
+          payload.billId as string,
+          {
+            amountSen: Number(payload.amountSen),
+            date: payload.date as string,
+            method: ((payload.method as string) || undefined) as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'DUITNOW' | 'TNG' | 'GRABPAY' | 'CARD' | undefined,
+            reference: (payload.reference as string) || undefined,
+          },
+          userId,
+        )
+        break
+
+      // ─── Credit/Debit Notes ─────────────────────────────────────────────────
+      case 'create_credit_note':
+      case 'create_debit_note': {
+        const noteType = action === 'create_credit_note' ? 'CREDIT_NOTE' : 'DEBIT_NOTE'
+        const rawLines = payload.lines
+        let cnLines: any[]
+        if (typeof rawLines === 'string') {
+          cnLines = JSON.parse(rawLines)
+        } else if (Array.isArray(rawLines)) {
+          cnLines = rawLines
+        } else {
+          cnLines = []
+        }
+        writeResult = await this.invoicesService.createCreditDebitNote(
+          tenantSchema,
+          payload.invoiceId as string,
+          noteType,
+          {
+            reason: payload.reason as string,
+            lines: cnLines.map((l: any) => ({
+              description: l.description,
+              quantity: Number(l.quantity),
+              unitPriceSen: Number(l.unitPriceSen),
+              discountPercent: l.discountPercent ? Number(l.discountPercent) : 0,
+              sstRate: l.sstRate ? Number(l.sstRate) : 0,
+            })),
+          },
+          userId,
+          tenantId,
+        )
+        break
+      }
+
+      // ─── Banking ──────────────────────────────────────────────────────────
+      case 'create_bank_account':
+        writeResult = await this.bankingService.createAccount(tenantSchema, {
+          bankName: payload.bankName as string,
+          name: payload.accountName as string,
+          accountNo: payload.accountNumber as string,
+          accountType: ((payload.accountType as string) || 'CURRENT') as 'CURRENT' | 'SAVINGS',
+          currency: (payload.currency as string) || 'MYR',
+          openingBalanceSen: payload.openingBalanceSen ? Number(payload.openingBalanceSen) : 0,
+        }, userId)
+        break
+
+      case 'create_bank_transaction': {
+        // The DTO uses positive/negative amountSen instead of type field
+        // DEBIT (money out) = negative, CREDIT (money in) = positive
+        const txType = (payload.type as string)?.toUpperCase()
+        let txAmountSen = Math.abs(Number(payload.amountSen))
+        if (txType === 'DEBIT') txAmountSen = -txAmountSen
+        writeResult = await this.bankingService.createTransaction(tenantSchema, {
+          bankAccountId: payload.bankAccountId as string,
+          date: payload.date as string,
+          description: payload.description as string,
+          amountSen: txAmountSen,
+          reference: (payload.reference as string) || undefined,
+        })
+        break
+      }
+
+      case 'match_bank_transaction':
+        writeResult = await this.bankingService.matchTransaction(
+          tenantSchema,
+          payload.transactionId as string,
+          payload.paymentId as string,
+        )
+        break
+
+      // ─── Tax & Compliance ─────────────────────────────────────────────────
+      case 'seed_tax_codes':
+        writeResult = await this.taxService.seedDefaultCodes(tenantSchema)
+        break
+
+      case 'generate_monthly_obligations':
+        writeResult = await this.complianceService.generateMonthlyObligations(
+          tenantSchema,
+          Number(payload.year),
+          Number(payload.month),
+        )
+        break
+
+      case 'complete_compliance_obligation':
+        writeResult = await this.complianceService.completeObligation(
+          tenantSchema,
+          payload.obligationId as string,
+          userId,
+        )
+        break
+
       default:
         throw new Error(`Unknown write action: ${action}`)
     }
 
     // Fire audit log for AI-initiated write actions
     const meta = this.resolveAuditMeta(action)
-    const entityId = (writeResult as any)?.id ?? payload.employeeId ?? payload.invoiceId ?? payload.quotationId ?? payload.leadId ?? payload.opportunityId ?? payload.requestId ?? payload.runId
+    const entityId = (writeResult as any)?.id ?? payload.employeeId ?? payload.invoiceId ?? payload.quotationId ?? payload.leadId ?? payload.opportunityId ?? payload.requestId ?? payload.runId ?? payload.claimId ?? payload.journalId ?? payload.billId ?? payload.transactionId ?? payload.obligationId
     this.auditService.log({
       tenantSchema,
       userId,

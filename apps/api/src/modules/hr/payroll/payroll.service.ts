@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../../../prisma/prisma.service'
-import { computeStatutory } from './malaysia-payroll.helper'
+import { computeStatutory, calculateOvertimePay, calculateHRDCorpLevy } from './malaysia-payroll.helper'
+
+const MINIMUM_WAGE_SEN = 170_000 // RM 1,700
 
 @Injectable()
 export class PayrollService {
@@ -60,7 +62,9 @@ export class PayrollService {
 
   /**
    * Generate payroll items for all active employees in the run.
+   * Integrates: basic salary + OT from work entries + approved claims as reimbursements.
    * Calculates EPF, SOCSO, EIS, and PCB automatically.
+   * Validates minimum wage compliance.
    */
   async generateItems(tenantSchema: string, runId: string) {
     const run = await this.findOneRun(tenantSchema, runId)
@@ -68,7 +72,8 @@ export class PayrollService {
 
     const employees = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT id, full_name, date_of_birth, basic_salary_sen,
-              epf_opted_out, socso_opted_out, eis_opted_out
+              epf_opted_out, socso_opted_out, eis_opted_out,
+              nationality, marital_status, spouse_working, children_count
        FROM "${tenantSchema}".employees
        WHERE status IN ('ACTIVE', 'PROBATION') AND deleted_at IS NULL`,
     )
@@ -81,7 +86,7 @@ export class PayrollService {
       runId,
     )
 
-    let totals = {
+    const totals = {
       grossSen: 0,
       netSen: 0,
       epfEmployee: 0,
@@ -94,17 +99,67 @@ export class PayrollService {
     }
 
     const daysInMonth = new Date(run.period_year, run.period_month, 0).getDate()
+    const startDate = `${run.period_year}-${String(run.period_month).padStart(2, '0')}-01`
+    const endDate = `${run.period_year}-${String(run.period_month).padStart(2, '0')}-${daysInMonth}`
+    const warnings: string[] = []
 
     for (const emp of employees) {
-      const grossSen = Number(emp.basic_salary_sen)
+      const basicSalarySen = Number(emp.basic_salary_sen)
+
+      // Minimum wage check
+      if (basicSalarySen < MINIMUM_WAGE_SEN && basicSalarySen > 0) {
+        warnings.push(`${emp.full_name}: Basic salary RM${(basicSalarySen / 100).toFixed(2)} is below minimum wage RM1,700`)
+      }
+
+      // Get OT data from work entries for this month
+      const otRows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT
+          COALESCE(SUM(overtime_hours), 0) AS ot_hours,
+          COALESCE(SUM(rest_day_hours), 0) AS rd_hours,
+          COALESCE(SUM(ph_hours), 0) AS ph_hours,
+          SUM(CASE WHEN is_absent = FALSE THEN 1 ELSE 0 END)::int AS days_worked
+         FROM "${tenantSchema}".work_entries
+         WHERE employee_id = $1::uuid AND date BETWEEN $2::date AND $3::date`,
+        emp.id,
+        startDate,
+        endDate,
+      )
+
+      const otData = otRows[0] ?? {}
+      const otHours = Number(otData.ot_hours) || 0
+      const rdHours = Number(otData.rd_hours) || 0
+      const phHours = Number(otData.ph_hours) || 0
+      const daysWorked = otData.days_worked ?? daysInMonth
+
+      // Calculate OT pay
+      const otCalc = calculateOvertimePay(basicSalarySen, otHours, rdHours, phHours)
+      const overtimeSen = otCalc.totalOtSen
+
+      // Get approved unpaid claims for reimbursement
+      const claimRows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT COALESCE(SUM(total_amount_sen), 0)::bigint AS total_claims
+         FROM "${tenantSchema}".claims
+         WHERE employee_id = $1::uuid AND status = 'APPROVED' AND payroll_run_id IS NULL`,
+        emp.id,
+      )
+      const claimReimbursementSen = Number(claimRows[0]?.total_claims ?? 0)
+
+      const grossSen = basicSalarySen + overtimeSen
       const dob = emp.date_of_birth ? new Date(emp.date_of_birth) : null
 
+      const isMalaysian = (emp.nationality ?? 'Malaysian').toLowerCase().includes('malaysia')
       const statutory = computeStatutory(
         grossSen,
         dob,
         Boolean(emp.epf_opted_out),
         Boolean(emp.socso_opted_out),
         Boolean(emp.eis_opted_out),
+        isMalaysian,
+        {
+          maritalStatus: emp.marital_status ?? 'SINGLE',
+          spouseWorking: emp.spouse_working ?? true,
+          childrenCount: Number(emp.children_count ?? 0),
+        },
       )
 
       const totalDeductions =
@@ -113,20 +168,22 @@ export class PayrollService {
         statutory.eisEmployee +
         statutory.pcb
 
-      const netSen = grossSen - totalDeductions
+      // Net = gross - deductions + claim reimbursements (reimbursements are non-taxable additions)
+      const netSen = grossSen - totalDeductions + claimReimbursementSen
 
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "${tenantSchema}".payroll_items (
           payroll_run_id, employee_id,
           working_days, days_worked,
-          basic_salary_sen, gross_salary_sen,
+          basic_salary_sen, overtime_sen, gross_salary_sen,
           epf_employee_sen, epf_employer_sen,
           socso_employee_sen, socso_employer_sen,
           eis_employee_sen, eis_employer_sen,
           pcb_sen, net_salary_sen
-        ) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        ) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
         ON CONFLICT (payroll_run_id, employee_id) DO UPDATE SET
           basic_salary_sen    = EXCLUDED.basic_salary_sen,
+          overtime_sen        = EXCLUDED.overtime_sen,
           gross_salary_sen    = EXCLUDED.gross_salary_sen,
           epf_employee_sen    = EXCLUDED.epf_employee_sen,
           epf_employer_sen    = EXCLUDED.epf_employer_sen,
@@ -139,8 +196,9 @@ export class PayrollService {
         runId,
         emp.id,
         daysInMonth,
-        daysInMonth, // assume full month worked
-        grossSen,
+        daysWorked,
+        basicSalarySen,
+        overtimeSen,
         grossSen,
         statutory.epfEmployee,
         statutory.epfEmployer,
@@ -152,6 +210,16 @@ export class PayrollService {
         netSen,
       )
 
+      // Link approved claims to this payroll run
+      if (claimReimbursementSen > 0) {
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "${tenantSchema}".claims SET status = 'PAID', payroll_run_id = $1::uuid, updated_at = NOW()
+           WHERE employee_id = $2::uuid AND status = 'APPROVED' AND payroll_run_id IS NULL`,
+          runId,
+          emp.id,
+        )
+      }
+
       totals.grossSen += grossSen
       totals.netSen += netSen
       totals.epfEmployee += statutory.epfEmployee
@@ -162,6 +230,12 @@ export class PayrollService {
       totals.eisEmployer += statutory.eisEmployer
       totals.pcb += statutory.pcb
     }
+
+    // Calculate HRD Corp levy
+    const malaysianCount = employees.filter(
+      (e: any) => (e.nationality ?? 'Malaysian').toLowerCase().includes('malaysia'),
+    ).length
+    const hrdCorpLevy = calculateHRDCorpLevy(totals.grossSen, malaysianCount)
 
     // Update run totals
     await this.prisma.$executeRawUnsafe(
@@ -192,7 +266,12 @@ export class PayrollService {
       runId,
     )
 
-    return { generated: employees.length, runId }
+    return {
+      generated: employees.length,
+      runId,
+      hrdCorpLevy,
+      warnings: warnings.length ? warnings : undefined,
+    }
   }
 
   async approveRun(tenantSchema: string, runId: string, approverId: string) {
@@ -229,7 +308,8 @@ export class PayrollService {
   ) {
     // Recalculate gross and net with new values
     const itemRows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT pi.*, e.date_of_birth, e.epf_opted_out, e.socso_opted_out, e.eis_opted_out
+      `SELECT pi.*, e.date_of_birth, e.epf_opted_out, e.socso_opted_out, e.eis_opted_out,
+              e.nationality, e.marital_status, e.spouse_working, e.children_count
        FROM "${tenantSchema}".payroll_items pi
        JOIN "${tenantSchema}".employees e ON e.id = pi.employee_id
        WHERE pi.id = $1::uuid`,
@@ -245,7 +325,12 @@ export class PayrollService {
     const gross = Number(item.basic_salary_sen) + allowances + overtime + bonus
 
     const dob = item.date_of_birth ? new Date(item.date_of_birth) : null
-    const statutory = computeStatutory(gross, dob, Boolean(item.epf_opted_out), Boolean(item.socso_opted_out), Boolean(item.eis_opted_out))
+    const isMalaysian = (item.nationality ?? 'Malaysian').toLowerCase().includes('malaysia')
+    const statutory = computeStatutory(
+      gross, dob, Boolean(item.epf_opted_out), Boolean(item.socso_opted_out), Boolean(item.eis_opted_out),
+      isMalaysian,
+      { maritalStatus: item.marital_status ?? 'SINGLE', spouseWorking: item.spouse_working ?? true, childrenCount: Number(item.children_count ?? 0) },
+    )
 
     const net = gross - statutory.epfEmployee - statutory.socsoEmployee - statutory.eisEmployee - statutory.pcb - otherDeductions
 

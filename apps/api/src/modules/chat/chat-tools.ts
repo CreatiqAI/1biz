@@ -20,6 +20,26 @@ export type ToolName =
   | 'get_leads'
   | 'get_opportunities'
   | 'get_quotations'
+  | 'get_holidays'
+  | 'get_work_entries'
+  | 'get_monthly_attendance'
+  | 'get_attendance_summary'
+  | 'get_claims'
+  | 'get_claim_types'
+  | 'get_employment_history'
+  // ─── Accounting read tools ──────────────────────────────────────────────
+  | 'get_journals'
+  | 'get_bills'
+  | 'get_trial_balance'
+  | 'get_profit_loss'
+  | 'get_balance_sheet'
+  | 'get_ar_aging'
+  | 'get_ap_aging'
+  | 'get_bank_accounts'
+  | 'get_bank_transactions'
+  | 'get_tax_codes'
+  | 'get_compliance_dashboard'
+  | 'get_compliance_obligations'
   // ─── Confirmation flow ────────────────────────────────────────────────────
   | 'confirm_action'
   | 'execute_confirmed_action'
@@ -48,6 +68,31 @@ export type ToolName =
   | 'create_quotation'
   | 'update_quotation_status'
   | 'convert_quotation_to_invoice'
+  | 'create_holiday'
+  | 'seed_holidays'
+  | 'record_work_entry'
+  | 'submit_claim'
+  | 'approve_claim'
+  | 'reject_claim'
+  | 'record_job_change'
+  | 'calculate_termination'
+  | 'process_termination'
+  | 'init_leave_balances'
+  // ─── Accounting write tools ─────────────────────────────────────────────
+  | 'create_journal_entry'
+  | 'post_journal_entry'
+  | 'reverse_journal_entry'
+  | 'create_bill'
+  | 'approve_bill'
+  | 'pay_bill'
+  | 'create_credit_note'
+  | 'create_debit_note'
+  | 'create_bank_account'
+  | 'create_bank_transaction'
+  | 'match_bank_transaction'
+  | 'seed_tax_codes'
+  | 'generate_monthly_obligations'
+  | 'complete_compliance_obligation'
 
 // Helper: string enum property
 function enumProp(description: string, values: string[]) {
@@ -632,6 +677,516 @@ export const CHAT_TOOLS: Tool[] = [
         quotationId: strProp('Quotation UUID (must be ACCEPTED status). Call get_quotations to find this.'),
       },
       required: ['quotationId'],
+    },
+  },
+
+  // ─── Holidays ──────────────────────────────────────────────────────────────
+  {
+    name: 'get_holidays',
+    description: 'List public holidays for a given year. Returns holiday name, date, whether it is mandatory under Malaysian Employment Act, and state (if state-specific). Defaults to current year if no year provided.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: intProp('Year to list holidays for (optional, defaults to current year).'),
+      },
+    },
+  },
+  {
+    name: 'create_holiday',
+    description: 'Add a public holiday to the calendar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: strProp('Holiday name, e.g. "Hari Raya Aidilfitri".'),
+        date: strProp('Holiday date in YYYY-MM-DD format.'),
+        isMandatory: { type: 'boolean' as const, description: 'Whether this is a mandatory gazetted holiday under Employment Act (optional, defaults to false).' },
+        state: strProp('Malaysian state if state-specific, e.g. "Selangor" (optional, omit for national).'),
+      },
+      required: ['name', 'date'],
+    },
+  },
+  {
+    name: 'seed_holidays',
+    description: 'Seed default Malaysian gazetted public holidays for a given year. Use this to quickly populate the holiday calendar with standard holidays.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: intProp('Year to seed holidays for, e.g. 2026.'),
+      },
+      required: ['year'],
+    },
+  },
+
+  // ─── Attendance / Work Entries ─────────────────────────────────────────────
+  {
+    name: 'get_work_entries',
+    description: 'Get attendance/work entries for a specific employee within a date range. Returns date, normal hours, overtime hours, rest day hours, public holiday hours, absence and late flags, and notes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        startDate: strProp('Start date in YYYY-MM-DD format.'),
+        endDate: strProp('End date in YYYY-MM-DD format.'),
+      },
+      required: ['employeeId', 'startDate', 'endDate'],
+    },
+  },
+  {
+    name: 'get_monthly_attendance',
+    description: 'Get all work entries for all employees for a specific month. Returns employee name, date, hours worked, OT, absences, and lates.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: intProp('Year, e.g. 2026.'),
+        month: intProp('Month number 1-12.'),
+      },
+      required: ['year', 'month'],
+    },
+  },
+  {
+    name: 'get_attendance_summary',
+    description: 'Get a monthly attendance summary for a specific employee — total days worked, absences, lates, total normal/OT/rest day/PH hours, and calculated OT pay. Call get_employees first to find the employee ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        year: intProp('Year, e.g. 2026.'),
+        month: intProp('Month number 1-12.'),
+      },
+      required: ['employeeId', 'year', 'month'],
+    },
+  },
+  {
+    name: 'record_work_entry',
+    description: 'Record or update a daily attendance/work entry for an employee. If an entry already exists for the same employee+date, it will be updated.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        date: strProp('Work date in YYYY-MM-DD format.'),
+        normalHours: numProp('Normal working hours (optional, defaults to 8).'),
+        overtimeHours: numProp('Overtime hours at 1.5x rate (optional, defaults to 0).'),
+        restDayHours: numProp('Rest day work hours at 2x rate (optional, defaults to 0).'),
+        phHours: numProp('Public holiday work hours at 3x rate (optional, defaults to 0).'),
+        isRestDay: { type: 'boolean' as const, description: 'Whether this date is a rest day (optional).' },
+        isPublicHoliday: { type: 'boolean' as const, description: 'Whether this date is a public holiday (optional).' },
+        isAbsent: { type: 'boolean' as const, description: 'Mark employee as absent (optional).' },
+        isLate: { type: 'boolean' as const, description: 'Mark employee as late (optional).' },
+        notes: strProp('Notes about this entry (optional).'),
+      },
+      required: ['employeeId', 'date'],
+    },
+  },
+
+  // ─── Claims ────────────────────────────────────────────────────────────────
+  {
+    name: 'get_claim_types',
+    description: 'List all configured expense claim types (e.g. Transport, Meals, Medical). Returns type id, name, code, whether receipt is required, taxable flag, and monthly limit (in sen).',
+    input_schema: noParams(),
+  },
+  {
+    name: 'get_claims',
+    description: 'List expense claims. Optionally filter by employee or approval status. Returns claim number, employee name, claim date, total amount (in sen), status, and line items count.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Filter by employee UUID (optional). Call get_employees to find this.'),
+        status: enumProp('Filter by claim status (optional).', ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'PAID']),
+      },
+    },
+  },
+  {
+    name: 'submit_claim',
+    description: 'Submit an expense claim on behalf of an employee. Call get_employees to find employeeId and get_claim_types to find claim type IDs for line items.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        claimDate: strProp('Claim date in YYYY-MM-DD format.'),
+        notes: strProp('Overall claim notes (optional).'),
+        lines: strProp('JSON array of claim line items. Each: {"claimTypeId":"uuid","description":"string","amountSen":number,"date":"YYYY-MM-DD","receiptUrl":"string (optional)"}. Example: [{"claimTypeId":"uuid","description":"Grab to client meeting","amountSen":2500,"date":"2026-03-01"}]'),
+      },
+      required: ['employeeId', 'claimDate', 'lines'],
+    },
+  },
+  {
+    name: 'approve_claim',
+    description: 'Approve a pending expense claim. Call get_claims with status=PENDING first to find the claim ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        claimId: strProp('Claim UUID. Call get_claims with status=PENDING to find this.'),
+      },
+      required: ['claimId'],
+    },
+  },
+  {
+    name: 'reject_claim',
+    description: 'Reject a pending expense claim. Call get_claims with status=PENDING first to find the claim ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        claimId: strProp('Claim UUID. Call get_claims with status=PENDING to find this.'),
+        reason: strProp('Reason for rejection (optional but recommended).'),
+      },
+      required: ['claimId'],
+    },
+  },
+
+  // ─── Employment History & Termination ──────────────────────────────────────
+  {
+    name: 'get_employment_history',
+    description: 'Get the employment history (job changes, promotions, transfers, salary changes) for a specific employee. Returns chronological list of changes with dates, departments, positions, salary, and reasons.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+      },
+      required: ['employeeId'],
+    },
+  },
+  {
+    name: 'record_job_change',
+    description: 'Record an employee job change — transfer, promotion, salary change, or demotion. This creates an immutable history record and updates the employee\'s current details.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        changeType: enumProp('Type of job change.', ['TRANSFER', 'PROMOTION', 'SALARY_CHANGE', 'DEMOTION']),
+        effectiveDate: strProp('Effective date in YYYY-MM-DD format.'),
+        departmentId: strProp('New department UUID (optional, for TRANSFER).'),
+        positionId: strProp('New position UUID (optional, for PROMOTION).'),
+        basicSalarySen: intProp('New basic salary in sen (optional, for SALARY_CHANGE). Multiply RM by 100.'),
+        reason: strProp('Reason for the change (optional).'),
+      },
+      required: ['employeeId', 'changeType', 'effectiveDate'],
+    },
+  },
+  {
+    name: 'calculate_termination',
+    description: 'Preview termination benefits for an employee WITHOUT actually terminating them. Returns notice period (weeks), notice pay, termination benefits, and total payout based on years of service. Use this to answer questions about termination costs.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        terminationDate: strProp('Proposed termination date in YYYY-MM-DD format.'),
+      },
+      required: ['employeeId', 'terminationDate'],
+    },
+  },
+  {
+    name: 'process_termination',
+    description: 'Actually terminate an employee. Updates their status, records history, and calculates final pay (notice + termination benefits). This is irreversible — always call calculate_termination first to preview, then confirm with the user.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: strProp('Employee UUID. Call get_employees to find this.'),
+        terminationDate: strProp('Termination date in YYYY-MM-DD format.'),
+        reason: strProp('Reason for termination (optional).'),
+      },
+      required: ['employeeId', 'terminationDate'],
+    },
+  },
+  {
+    name: 'init_leave_balances',
+    description: 'Initialize leave balances for all active employees for a specific year. Calculates tenure-based entitlements (Annual: 8/12/16 days, Sick: 14/18/22 days based on years of service) and handles carryover from previous year.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: intProp('Year to initialize balances for, e.g. 2026.'),
+      },
+      required: ['year'],
+    },
+  },
+
+  // ─── Accounting: Journals ──────────────────────────────────────────────────
+  {
+    name: 'get_journals',
+    description: 'List journal entries. Optionally filter by status (DRAFT, POSTED, REVERSED). Returns entry number, date, description, source, status, and total debit/credit amounts in sen.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: enumProp('Filter by journal entry status.', ['DRAFT', 'POSTED', 'REVERSED']),
+      },
+    },
+  },
+  {
+    name: 'create_journal_entry',
+    description: 'Create a manual journal entry. Lines must balance (total debits = total credits). Call get_accounts to find account IDs for the lines.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: strProp('Journal entry date in YYYY-MM-DD format.'),
+        description: strProp('Description of the journal entry.'),
+        source: enumProp('Source of the entry (optional, defaults to MANUAL).', ['MANUAL', 'INVOICE', 'PAYMENT', 'PAYROLL', 'OTHER']),
+        lines: strProp('JSON array of journal lines. Each: {"accountId":"uuid","description":"string (optional)","debitSen":number,"creditSen":number}. Debits must equal credits.'),
+      },
+      required: ['date', 'description', 'lines'],
+    },
+  },
+  {
+    name: 'post_journal_entry',
+    description: 'Post a DRAFT journal entry to the general ledger. Once posted, the entry affects account balances and cannot be deleted.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        journalId: strProp('Journal entry UUID. Call get_journals to find this.'),
+      },
+      required: ['journalId'],
+    },
+  },
+  {
+    name: 'reverse_journal_entry',
+    description: 'Reverse a POSTED journal entry. Creates a new reversing entry that negates the original.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        journalId: strProp('Journal entry UUID. Call get_journals to find this.'),
+      },
+      required: ['journalId'],
+    },
+  },
+
+  // ─── Accounting: Bills (AP) ────────────────────────────────────────────────
+  {
+    name: 'get_bills',
+    description: 'List vendor bills (accounts payable). Optionally filter by status. Returns bill number, supplier name, dates, total, paid, and balance amounts in sen.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: enumProp('Filter by bill status.', ['DRAFT', 'APPROVED', 'PARTIAL', 'PAID', 'CANCELLED']),
+      },
+    },
+  },
+  {
+    name: 'create_bill',
+    description: 'Create a vendor bill. Call get_contacts with type=SUPPLIER first to find the contactId. Lines require description, quantity, and unit price in sen.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        contactId: strProp('Supplier contact UUID. Call get_contacts with type=SUPPLIER to find this.'),
+        billDate: strProp('Bill date in YYYY-MM-DD format.'),
+        dueDate: strProp('Payment due date in YYYY-MM-DD format (optional).'),
+        notes: strProp('Notes (optional).'),
+        lines: strProp('JSON array of bill line items. Each: {"description":"string","quantity":number,"unitPriceSen":number,"discountPercent":number,"sstRate":number,"accountId":"uuid (optional)"}'),
+      },
+      required: ['contactId', 'billDate', 'lines'],
+    },
+  },
+  {
+    name: 'approve_bill',
+    description: 'Approve a DRAFT bill for payment. Call get_bills to find the bill ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        billId: strProp('Bill UUID. Call get_bills to find this.'),
+      },
+      required: ['billId'],
+    },
+  },
+  {
+    name: 'pay_bill',
+    description: 'Record a payment against an APPROVED or PARTIAL bill. Creates a payment record and updates the bill balance.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        billId: strProp('Bill UUID. Call get_bills to find this.'),
+        amountSen: intProp('Payment amount in sen. Multiply RM amount by 100.'),
+        date: strProp('Payment date in YYYY-MM-DD format.'),
+        method: enumProp('Payment method (optional).', ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'DUITNOW', 'TNG', 'GRABPAY', 'CARD']),
+        reference: strProp('Payment reference (optional).'),
+      },
+      required: ['billId', 'amountSen', 'date'],
+    },
+  },
+
+  // ─── Accounting: Credit/Debit Notes ────────────────────────────────────────
+  {
+    name: 'create_credit_note',
+    description: 'Create a Credit Note against an existing invoice. Reduces the customer\'s outstanding balance. Call get_invoices to find the invoice ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoiceId: strProp('Original invoice UUID. Call get_invoices to find this.'),
+        reason: strProp('Reason for the credit note.'),
+        lines: strProp('JSON array of credit note line items. Each: {"description":"string","quantity":number,"unitPriceSen":number,"discountPercent":number,"sstRate":number}'),
+      },
+      required: ['invoiceId', 'reason', 'lines'],
+    },
+  },
+  {
+    name: 'create_debit_note',
+    description: 'Create a Debit Note against an existing invoice. Increases the customer\'s outstanding balance (for additional charges). Call get_invoices to find the invoice ID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoiceId: strProp('Original invoice UUID. Call get_invoices to find this.'),
+        reason: strProp('Reason for the debit note.'),
+        lines: strProp('JSON array of debit note line items. Each: {"description":"string","quantity":number,"unitPriceSen":number,"discountPercent":number,"sstRate":number}'),
+      },
+      required: ['invoiceId', 'reason', 'lines'],
+    },
+  },
+
+  // ─── Accounting: Financial Reports ─────────────────────────────────────────
+  {
+    name: 'get_trial_balance',
+    description: 'Get the Trial Balance report as of a specific date. Returns each account with debit and credit balances, plus totals. Debits should equal credits for a balanced ledger.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        asOfDate: strProp('As-of date in YYYY-MM-DD format.'),
+      },
+      required: ['asOfDate'],
+    },
+  },
+  {
+    name: 'get_profit_loss',
+    description: 'Get the Profit & Loss (Income Statement) report for a date range. Shows revenue and expense accounts with amounts, and net profit/loss.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        startDate: strProp('Period start date in YYYY-MM-DD format.'),
+        endDate: strProp('Period end date in YYYY-MM-DD format.'),
+      },
+      required: ['startDate', 'endDate'],
+    },
+  },
+  {
+    name: 'get_balance_sheet',
+    description: 'Get the Balance Sheet report as of a specific date. Shows assets, liabilities, and equity with balances. Assets should equal Liabilities + Equity.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        asOfDate: strProp('As-of date in YYYY-MM-DD format.'),
+      },
+      required: ['asOfDate'],
+    },
+  },
+  {
+    name: 'get_ar_aging',
+    description: 'Get the Accounts Receivable Aging report. Shows outstanding invoice balances by customer, bucketed by age (current, 1-30, 31-60, 61-90, 90+ days).',
+    input_schema: noParams(),
+  },
+  {
+    name: 'get_ap_aging',
+    description: 'Get the Accounts Payable Aging report. Shows outstanding bill balances by supplier, bucketed by age (current, 1-30, 31-60, 61-90, 90+ days).',
+    input_schema: noParams(),
+  },
+
+  // ─── Accounting: Banking ───────────────────────────────────────────────────
+  {
+    name: 'get_bank_accounts',
+    description: 'List all bank accounts registered in the system. Returns account name, bank name, account number, type, currency, and current balance in sen.',
+    input_schema: noParams(),
+  },
+  {
+    name: 'get_bank_transactions',
+    description: 'List bank transactions for a specific bank account. Optionally filter by date range. Returns date, description, type, amount, matching status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bankAccountId: strProp('Bank account UUID. Call get_bank_accounts to find this.'),
+        startDate: strProp('Filter from date in YYYY-MM-DD format (optional).'),
+        endDate: strProp('Filter to date in YYYY-MM-DD format (optional).'),
+      },
+      required: ['bankAccountId'],
+    },
+  },
+  {
+    name: 'create_bank_account',
+    description: 'Create a new bank account record.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bankName: strProp('Bank name, e.g. Maybank, CIMB, RHB.'),
+        accountName: strProp('Account name / label.'),
+        accountNumber: strProp('Bank account number.'),
+        accountType: enumProp('Account type (optional, defaults to CURRENT).', ['SAVINGS', 'CURRENT', 'FIXED_DEPOSIT']),
+        currency: strProp('Currency code (optional, defaults to MYR).'),
+        openingBalanceSen: intProp('Opening balance in sen (optional, defaults to 0).'),
+      },
+      required: ['bankName', 'accountName', 'accountNumber'],
+    },
+  },
+  {
+    name: 'create_bank_transaction',
+    description: 'Manually create a bank transaction entry (for transactions not imported from bank statement).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bankAccountId: strProp('Bank account UUID. Call get_bank_accounts to find this.'),
+        date: strProp('Transaction date in YYYY-MM-DD format.'),
+        description: strProp('Transaction description.'),
+        type: enumProp('Transaction type.', ['DEBIT', 'CREDIT']),
+        amountSen: intProp('Transaction amount in sen. Multiply RM by 100.'),
+        reference: strProp('Reference number (optional).'),
+      },
+      required: ['bankAccountId', 'date', 'description', 'type', 'amountSen'],
+    },
+  },
+  {
+    name: 'match_bank_transaction',
+    description: 'Match a bank transaction to an existing payment record for reconciliation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        transactionId: strProp('Bank transaction UUID.'),
+        paymentId: strProp('Payment UUID to match with.'),
+      },
+      required: ['transactionId', 'paymentId'],
+    },
+  },
+
+  // ─── Accounting: Tax & Compliance ──────────────────────────────────────────
+  {
+    name: 'get_tax_codes',
+    description: 'List all configured SST tax codes. Returns code, name, tax type (SERVICE/SALES), rate percentage, category, and effective dates.',
+    input_schema: noParams(),
+  },
+  {
+    name: 'seed_tax_codes',
+    description: 'Seed default Malaysian SST tax codes (8% standard, 6% for F&B/Telecom/Parking/Logistics, plus exemptions). Use this to quickly set up the tax configuration.',
+    input_schema: noParams(),
+  },
+  {
+    name: 'get_compliance_dashboard',
+    description: 'Get a summary of compliance obligations status — counts of overdue, due soon, upcoming, and completed obligations.',
+    input_schema: noParams(),
+  },
+  {
+    name: 'get_compliance_obligations',
+    description: 'List compliance obligations with optional filters by year, month, or status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: intProp('Filter by year (optional).'),
+        month: intProp('Filter by month 1-12 (optional).'),
+        status: enumProp('Filter by status (optional).', ['UPCOMING', 'DUE_SOON', 'OVERDUE', 'COMPLETED']),
+      },
+    },
+  },
+  {
+    name: 'generate_monthly_obligations',
+    description: 'Generate standard monthly statutory compliance obligations (EPF, SOCSO, EIS, PCB remittances) for a specific month.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: intProp('Year, e.g. 2026.'),
+        month: intProp('Month number 1-12.'),
+      },
+      required: ['year', 'month'],
+    },
+  },
+  {
+    name: 'complete_compliance_obligation',
+    description: 'Mark a compliance obligation as completed (e.g. after submitting EPF or filing SST return).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        obligationId: strProp('Compliance obligation UUID.'),
+      },
+      required: ['obligationId'],
     },
   },
 ]

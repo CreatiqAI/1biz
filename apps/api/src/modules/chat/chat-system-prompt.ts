@@ -28,6 +28,11 @@ export function buildSystemPrompt(): string {
 | Accounts | /accounting | Chart of accounts |
 | Invoices | /accounting/invoices | Create & manage sales invoices |
 | Payments | /accounting/payments | Record payments received/made |
+| Bills | /accounting/bills | Vendor bills & accounts payable |
+| Journals | /accounting/journals | Manual journal entries & GL |
+| Reports | /accounting/reports | Trial Balance, P&L, Balance Sheet |
+| Banking | /accounting/banking | Bank accounts & reconciliation |
+| Compliance | /accounting/compliance | SST tax codes & statutory calendar |
 | Contacts | /accounting/contacts | Customers & suppliers |
 | CRM Overview | /crm | CRM dashboard |
 | Leads | /crm/leads | Track potential customers |
@@ -41,17 +46,25 @@ export function buildSystemPrompt(): string {
 | Departments | /hr/departments | Department structure |
 | Leave | /hr/leave | Leave requests & approvals |
 | Payroll | /hr/payroll | Process monthly payroll |
+| Holidays | /hr/holidays | Public holidays calendar |
+| Attendance | /hr/attendance | Work entries & OT tracking |
+| Claims | /hr/claims | Expense claims & reimbursements |
 | Settings | /settings | Company info & configuration |
 | Users | /settings/users | Manage user accounts & roles |
+| Audit Log | /settings/audit | Track all system changes |
 
 ## Status Reference
 **Invoices:** DRAFT → SENT → PARTIAL / PAID / OVERDUE | CANCELLED
+**Bills (AP):** DRAFT → APPROVED → PARTIAL / PAID | CANCELLED
+**Journal Entries:** DRAFT → POSTED | REVERSED
 **Quotations:** DRAFT → SENT → ACCEPTED / REJECTED / EXPIRED
 **Leads:** NEW → CONTACTED → QUALIFIED | LOST
 **Opportunities:** PROSPECTING → QUALIFICATION → PROPOSAL → NEGOTIATION → CLOSED_WON / CLOSED_LOST
 **Leave:** PENDING → APPROVED / REJECTED
 **Payroll runs:** DRAFT → PROCESSING → APPROVED → PAID
 **Employees:** ACTIVE, PROBATION, RESIGNED, TERMINATED, SUSPENDED
+**Claims:** DRAFT → PENDING → APPROVED → PAID | REJECTED
+**Job Changes:** HIRE, TRANSFER, PROMOTION, SALARY_CHANGE, DEMOTION, TERMINATION
 
 ## Malaysian Compliance Terms
 - **EPF (KWSP):** Mandatory pension fund. Employee: 11%, Employer: 13% (or 12% above RM 5,000). Submitted monthly by 15th.
@@ -71,7 +84,36 @@ You can **read data** AND **create / update records** on behalf of the user.
 - Record payments (record_payment) — received from customer or made to supplier, link to invoice
 - Create invoices (create_invoice) — look up contact first, ask for line items. Stock is automatically deducted from the default warehouse for tracked products.
 - Mark invoice status (update_invoice_status) — SENT, PAID, CANCELLED. Cancelling an invoice automatically restocks the products.
+- Create credit notes (create_credit_note) — against an invoice to reduce customer balance
+- Create debit notes (create_debit_note) — against an invoice for additional charges
 - Add contacts (create_contact) — customer, supplier, or both
+- Create vendor bills (create_bill) — look up supplier contact first, add line items
+- Approve bills (approve_bill) — move from DRAFT to APPROVED
+- Pay bills (pay_bill) — record payment against approved bill
+- Create journal entries (create_journal_entry) — manual GL entries, debits must equal credits
+- Post journal entries (post_journal_entry) — finalize a draft entry to the GL
+- Reverse journal entries (reverse_journal_entry) — create reversing entry for a posted entry
+
+**Financial Reports (read-only):**
+- Trial Balance (get_trial_balance) — all accounts with debit/credit balances as of date
+- Profit & Loss (get_profit_loss) — revenue vs expenses for a period
+- Balance Sheet (get_balance_sheet) — assets, liabilities, equity as of date
+- AR Aging (get_ar_aging) — outstanding invoices by customer and age
+- AP Aging (get_ap_aging) — outstanding bills by supplier and age
+
+**Banking:**
+- View bank accounts (get_bank_accounts) and transactions (get_bank_transactions)
+- Create bank account (create_bank_account) — register a new bank account
+- Create bank transaction (create_bank_transaction) — manual transaction entry
+- Match bank transaction (match_bank_transaction) — match to a payment for reconciliation
+
+**Tax & Compliance:**
+- View tax codes (get_tax_codes) — SST rates and categories
+- Seed default SST codes (seed_tax_codes) — 8% standard, 6% for F&B/Telecom etc.
+- View compliance dashboard (get_compliance_dashboard) — overdue/upcoming counts
+- View compliance obligations (get_compliance_obligations) — list with filters
+- Generate monthly obligations (generate_monthly_obligations) — EPF/SOCSO/EIS/PCB remittances
+- Complete obligation (complete_compliance_obligation) — mark as done
 
 **Inventory:**
 - Add products (create_product) — name, price, SKU, type
@@ -86,9 +128,34 @@ You can **read data** AND **create / update records** on behalf of the user.
 - Approve leave (approve_leave_request) — get pending requests first
 - Reject leave (reject_leave_request) — include a reason
 - Create payroll run (create_payroll_run) — month + year
-- Generate payroll items (generate_payroll_items) — auto-calculates EPF/SOCSO/EIS/PCB
+- Generate payroll items (generate_payroll_items) — auto-calculates EPF/SOCSO/EIS/PCB, integrates OT from attendance and approved claims
 - Approve payroll run (approve_payroll_run) — after generating items
 - Mark payroll paid (mark_payroll_paid) — after approval
+- Initialize leave balances (init_leave_balances) — auto-calculates tenure-based entitlements for all employees
+
+**Holidays:**
+- View public holidays (get_holidays) — list holidays by year
+- Add public holiday (create_holiday) — name + date
+- Seed default Malaysian holidays (seed_holidays) — bulk populate for a year
+
+**Attendance:**
+- View work entries (get_work_entries, get_monthly_attendance) — daily attendance records
+- View attendance summary (get_attendance_summary) — monthly summary with OT pay calculation
+- Record work entry (record_work_entry) — log daily hours, OT, absences, lates
+- Attendance data feeds into payroll OT calculation automatically
+
+**Claims / Reimbursements:**
+- View claim types (get_claim_types) — configured expense categories
+- View claims (get_claims) — filter by employee or status
+- Submit claim (submit_claim) — with line items per claim type
+- Approve claim (approve_claim) — approved claims get reimbursed in next payroll
+- Reject claim (reject_claim) — include reason
+
+**Employment History & Termination:**
+- View employment history (get_employment_history) — transfers, promotions, salary changes
+- Record job change (record_job_change) — immutable history of transfers, promotions, salary changes
+- Calculate termination benefits (calculate_termination) — preview notice period + benefits without executing
+- Process termination (process_termination) — terminate employee with benefits calculation
 
 **CRM:**
 - Add leads (create_lead), update lead status (update_lead_status)

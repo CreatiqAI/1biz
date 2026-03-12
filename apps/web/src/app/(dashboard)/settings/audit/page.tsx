@@ -12,12 +12,24 @@ const ACTION_COLORS: Record<string, string> = {
   REJECT: 'bg-red-100 text-red-700',
   GENERATE: 'bg-sky-100 text-sky-700',
   MARK_PAID: 'bg-emerald-100 text-emerald-700',
+  SEED: 'bg-sky-100 text-sky-700',
+  BULK: 'bg-sky-100 text-sky-700',
+  BULK_INIT: 'bg-sky-100 text-sky-700',
+  TERMINATE: 'bg-red-100 text-red-700',
+  IMPORT: 'bg-sky-100 text-sky-700',
+  MATCH: 'bg-blue-100 text-blue-700',
+  UNMATCH: 'bg-amber-100 text-amber-700',
+  COMPLETE: 'bg-emerald-100 text-emerald-700',
 }
 
 const ENTITY_TYPES = [
   '', 'invoice', 'payment', 'contact', 'account', 'product', 'warehouse',
   'stock_movement', 'lead', 'opportunity', 'quotation', 'employee',
-  'department', 'leave_type', 'leave_request', 'payroll', 'user', 'settings', 'tenant',
+  'department', 'position', 'leave_type', 'leave_request', 'leave_balance', 'payroll', 'payroll_item',
+  'public_holiday', 'work_entry', 'claim', 'claim_type', 'employment_history',
+  'journal_entry', 'bill', 'bank_account', 'bank_transaction', 'recon_session',
+  'tax_code', 'compliance_obligation',
+  'user', 'settings', 'tenant',
 ]
 
 const PAGE_SIZE = 25

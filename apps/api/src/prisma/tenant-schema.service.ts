@@ -37,10 +37,105 @@ export class TenantSchemaService implements OnModuleInit {
       for (const tenant of tenants) {
         await this.migrateAllTables(tenant.schema)
         await this.migrateAuditLogsColumns(tenant.schema)
+        await this.migrateEmployeeColumns(tenant.schema)
+        await this.migrateLeaveTypesColumns(tenant.schema)
+        await this.seedDefaultPublicHolidays(tenant.schema)
+        await this.seedDefaultClaimTypes(tenant.schema)
       }
       this.logger.log(`Tenant migrations complete for ${tenants.length} tenant(s)`)
     } catch (err) {
       this.logger.error('Tenant migration failed', err)
+    }
+  }
+
+  /**
+   * Adds employee columns for PCB profile and maternity tracking (v2).
+   */
+  private async migrateEmployeeColumns(schemaName: string): Promise<void> {
+    const stmts = [
+      `ALTER TABLE "${schemaName}".employees ADD COLUMN IF NOT EXISTS marital_status VARCHAR(20) DEFAULT 'SINGLE'`,
+      `ALTER TABLE "${schemaName}".employees ADD COLUMN IF NOT EXISTS spouse_working BOOLEAN DEFAULT TRUE`,
+      `ALTER TABLE "${schemaName}".employees ADD COLUMN IF NOT EXISTS children_count INTEGER DEFAULT 0`,
+      `ALTER TABLE "${schemaName}".employees ADD COLUMN IF NOT EXISTS confinement_count INTEGER DEFAULT 0`,
+    ]
+    for (const stmt of stmts) {
+      await this.prisma.$executeRawUnsafe(stmt)
+    }
+  }
+
+  /**
+   * Adds carryover_days column to leave_types (v2).
+   */
+  private async migrateLeaveTypesColumns(schemaName: string): Promise<void> {
+    await this.prisma.$executeRawUnsafe(
+      `ALTER TABLE "${schemaName}".leave_types ADD COLUMN IF NOT EXISTS carryover_days DECIMAL(5,1) DEFAULT 0`,
+    )
+  }
+
+  /**
+   * Seeds default public holidays for the current year if none exist.
+   */
+  private async seedDefaultPublicHolidays(schemaName: string): Promise<void> {
+    const currentYear = new Date().getFullYear()
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "${schemaName}".public_holidays WHERE year = $1 LIMIT 1`,
+      currentYear,
+    )
+    if (existing.length) return // Already seeded
+
+    const holidays = [
+      { name: 'New Year', date: `${currentYear}-01-01`, mandatory: false },
+      { name: 'Thaipusam', date: `${currentYear}-01-25`, mandatory: false },
+      { name: 'Workers Day', date: `${currentYear}-05-01`, mandatory: true },
+      { name: 'YDPA Birthday', date: `${currentYear}-06-01`, mandatory: true },
+      { name: 'National Day', date: `${currentYear}-08-31`, mandatory: true },
+      { name: 'Malaysia Day', date: `${currentYear}-09-16`, mandatory: true },
+      { name: 'Christmas Day', date: `${currentYear}-12-25`, mandatory: false },
+    ]
+
+    for (const h of holidays) {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "${schemaName}".public_holidays (name, date, is_mandatory, year)
+         VALUES ($1, $2::date, $3, $4)
+         ON CONFLICT (name, date, year) DO NOTHING`,
+        h.name,
+        h.date,
+        h.mandatory,
+        currentYear,
+      )
+    }
+  }
+
+  /**
+   * Seeds default claim types if none exist.
+   */
+  private async seedDefaultClaimTypes(schemaName: string): Promise<void> {
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "${schemaName}".claim_types LIMIT 1`,
+    )
+    if (existing.length) return
+
+    const types = [
+      { name: 'Transport', code: 'TRN', requiresReceipt: true, isTaxable: false, limit: 0 },
+      { name: 'Meals', code: 'MEAL', requiresReceipt: true, isTaxable: false, limit: 0 },
+      { name: 'Accommodation', code: 'ACCOM', requiresReceipt: true, isTaxable: false, limit: 0 },
+      { name: 'Parking & Toll', code: 'PARK', requiresReceipt: true, isTaxable: false, limit: 0 },
+      { name: 'Fuel / Mileage', code: 'FUEL', requiresReceipt: false, isTaxable: false, limit: 0 },
+      { name: 'Medical', code: 'MED', requiresReceipt: true, isTaxable: false, limit: 0 },
+      { name: 'Other', code: 'OTHER', requiresReceipt: true, isTaxable: false, limit: 0 },
+    ]
+
+    for (const ct of types) {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "${schemaName}".claim_types (name, code, requires_receipt, is_taxable, monthly_limit_sen)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (code) DO NOTHING`,
+        ct.name,
+        ct.code,
+        ct.requiresReceipt,
+        ct.isTaxable,
+        ct.limit,
+      )
     }
   }
 
@@ -56,6 +151,9 @@ export class TenantSchemaService implements OnModuleInit {
       `ALTER TABLE "${schemaName}".audit_logs DROP COLUMN IF EXISTS old_values`,
       `ALTER TABLE "${schemaName}".audit_logs DROP COLUMN IF EXISTS new_values`,
       `ALTER TABLE "${schemaName}".audit_logs DROP COLUMN IF EXISTS user_agent`,
+      // Fix column types — entity_id was originally UUID which rejects non-UUID strings
+      `ALTER TABLE "${schemaName}".audit_logs ALTER COLUMN entity_id TYPE VARCHAR(255)`,
+      `ALTER TABLE "${schemaName}".audit_logs ALTER COLUMN ip_address TYPE VARCHAR(100)`,
     ]
     for (const stmt of stmts) {
       await this.prisma.$executeRawUnsafe(stmt)
@@ -114,6 +212,8 @@ export class TenantSchemaService implements OnModuleInit {
     // Seed default data
     await this.seedDefaultChartOfAccounts(schemaName)
     await this.seedDefaultLeaveTypes(schemaName)
+    await this.seedDefaultPublicHolidays(schemaName)
+    await this.seedDefaultClaimTypes(schemaName)
 
     this.logger.log(`Schema created successfully: ${schemaName}`)
   }

@@ -207,6 +207,231 @@ export function useLeaveBalances(employeeId: string, year?: number) {
   })
 }
 
+export function useInitLeaveBalances() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, year }: { employeeId: string; year?: number }) =>
+      post(`/hr/leave/balances/${employeeId}/init`, { year }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balances'] }),
+  })
+}
+
+export function useInitAllLeaveBalances() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { year?: number }) => post('/hr/leave/balances/init-all', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leave-balances'] }),
+  })
+}
+
+// ─── Holidays ─────────────────────────────────────────────────────────────────
+
+export function useHolidays(year?: number) {
+  return useQuery({
+    queryKey: ['holidays', year],
+    queryFn: () => get<any[]>(`/hr/holidays${year ? `?year=${year}` : ''}`),
+  })
+}
+
+export function useCreateHoliday() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; date: string; isMandatory?: boolean; state?: string }) =>
+      post('/hr/holidays', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['holidays'] }),
+  })
+}
+
+export function useUpdateHoliday() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; date?: string; isMandatory?: boolean; state?: string }) =>
+      patch(`/hr/holidays/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['holidays'] }),
+  })
+}
+
+export function useDeleteHoliday() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(`/hr/holidays/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['holidays'] }),
+  })
+}
+
+export function useSeedHolidays() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { year?: number }) => post('/hr/holidays/seed', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['holidays'] }),
+  })
+}
+
+// ─── Employment History ───────────────────────────────────────────────────────
+
+export function useEmploymentHistory(employeeId: string) {
+  return useQuery({
+    queryKey: ['employment-history', employeeId],
+    queryFn: () => get<any[]>(`/hr/employees/${employeeId}/history`),
+    enabled: !!employeeId,
+  })
+}
+
+export function useRecordJobChange() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, ...data }: { employeeId: string; changeType: string; effectiveDate: string; departmentId?: string; positionId?: string; basicSalarySen?: number; reason?: string }) =>
+      post(`/hr/employees/${employeeId}/job-change`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['employment-history'] })
+    },
+  })
+}
+
+export function useTerminationPreview(employeeId: string, terminationDate: string) {
+  return useQuery({
+    queryKey: ['termination-preview', employeeId, terminationDate],
+    queryFn: () => get<any>(`/hr/employees/${employeeId}/termination-preview?terminationDate=${terminationDate}`),
+    enabled: !!employeeId && !!terminationDate,
+  })
+}
+
+export function useProcessTermination() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, ...data }: { employeeId: string; terminationDate: string; reason?: string }) =>
+      post(`/hr/employees/${employeeId}/terminate`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      qc.invalidateQueries({ queryKey: ['employment-history'] })
+      qc.invalidateQueries({ queryKey: ['hr-stats'] })
+    },
+  })
+}
+
+// ─── Attendance / Work Entries ──────────────────────────────────────────────
+
+export function useWorkEntries(employeeId: string, startDate: string, endDate: string) {
+  return useQuery({
+    queryKey: ['work-entries', employeeId, startDate, endDate],
+    queryFn: () => get<any[]>(`/hr/attendance/entries/${employeeId}?startDate=${startDate}&endDate=${endDate}`),
+    enabled: !!employeeId && !!startDate && !!endDate,
+  })
+}
+
+export function useMonthlyWorkEntries(year: number, month: number) {
+  return useQuery({
+    queryKey: ['work-entries-monthly', year, month],
+    queryFn: () => get<any[]>(`/hr/attendance/monthly?year=${year}&month=${month}`),
+  })
+}
+
+export function useUpsertWorkEntry() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      employeeId: string; date: string; normalHours?: number; overtimeHours?: number;
+      restDayHours?: number; phHours?: number; isRestDay?: boolean; isPublicHoliday?: boolean;
+      isAbsent?: boolean; isLate?: boolean; notes?: string
+    }) => post('/hr/attendance/entries', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-entries'] }),
+  })
+}
+
+export function useBulkUpsertWorkEntries() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { entries: any[] }) => post('/hr/attendance/entries/bulk', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-entries'] }),
+  })
+}
+
+export function useDeleteWorkEntry() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => del(`/hr/attendance/entries/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-entries'] }),
+  })
+}
+
+export function useAttendanceSummary(employeeId: string, year: number, month: number) {
+  return useQuery({
+    queryKey: ['attendance-summary', employeeId, year, month],
+    queryFn: () => get<any>(`/hr/attendance/summary/${employeeId}?year=${year}&month=${month}`),
+    enabled: !!employeeId,
+  })
+}
+
+export function useAllAttendanceSummaries(year: number, month: number) {
+  return useQuery({
+    queryKey: ['attendance-summaries', year, month],
+    queryFn: () => get<any[]>(`/hr/attendance/summaries?year=${year}&month=${month}`),
+  })
+}
+
+// ─── Claims ─────────────────────────────────────────────────────────────────
+
+export function useClaimTypes() {
+  return useQuery({ queryKey: ['claim-types'], queryFn: () => get<any[]>('/hr/claims/types') })
+}
+
+export function useCreateClaimType() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; code: string; description?: string; requiresReceipt?: boolean; monthlyLimitSen?: number }) =>
+      post('/hr/claims/types', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['claim-types'] }),
+  })
+}
+
+export function useClaims(employeeId?: string, status?: string) {
+  const params = new URLSearchParams()
+  if (employeeId) params.set('employeeId', employeeId)
+  if (status) params.set('status', status)
+  const qs = params.toString()
+  return useQuery({
+    queryKey: ['claims', employeeId, status],
+    queryFn: () => get<any[]>(`/hr/claims${qs ? `?${qs}` : ''}`),
+  })
+}
+
+export function useClaim(id: string) {
+  return useQuery({
+    queryKey: ['claims', id],
+    queryFn: () => get<any>(`/hr/claims/${id}`),
+    enabled: !!id,
+  })
+}
+
+export function useCreateClaim() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      employeeId: string; claimDate: string; notes?: string;
+      lines: Array<{ claimTypeId: string; description: string; amountSen: number; receiptUrl?: string; date: string }>
+    }) => post('/hr/claims', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['claims'] }),
+  })
+}
+
+export function useApproveClaim() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => patch(`/hr/claims/${id}/approve`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['claims'] }),
+  })
+}
+
+export function useRejectClaim() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      patch(`/hr/claims/${id}/reject`, { reason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['claims'] }),
+  })
+}
+
 // ─── Payroll ─────────────────────────────────────────────────────────────────
 
 export function usePayrollRuns() {

@@ -160,6 +160,143 @@ CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".payment_allocations (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".bills (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bill_no VARCHAR(50) NOT NULL UNIQUE,
+  type VARCHAR(20) NOT NULL DEFAULT 'BILL', -- BILL, DEBIT_NOTE, CREDIT_NOTE
+  contact_id UUID NOT NULL REFERENCES "{{SCHEMA}}".contacts(id),
+  bill_date DATE NOT NULL,
+  due_date DATE,
+  status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, PENDING, APPROVED, PARTIAL, PAID, CANCELLED
+  currency VARCHAR(3) DEFAULT 'MYR',
+  exchange_rate DECIMAL(10, 6) DEFAULT 1.000000,
+  subtotal_sen BIGINT NOT NULL DEFAULT 0,
+  sst_amount_sen BIGINT NOT NULL DEFAULT 0,
+  discount_sen BIGINT NOT NULL DEFAULT 0,
+  total_sen BIGINT NOT NULL DEFAULT 0,
+  paid_sen BIGINT NOT NULL DEFAULT 0,
+  balance_sen BIGINT NOT NULL DEFAULT 0,
+  reference VARCHAR(255), -- vendor invoice reference
+  notes TEXT,
+  approved_by UUID,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID,
+  deleted_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".bill_lines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bill_id UUID NOT NULL REFERENCES "{{SCHEMA}}".bills(id) ON DELETE CASCADE,
+  account_id UUID REFERENCES "{{SCHEMA}}".accounts(id),
+  product_id UUID,
+  description TEXT NOT NULL,
+  quantity DECIMAL(10, 4) NOT NULL DEFAULT 1,
+  unit_price_sen BIGINT NOT NULL,
+  discount_percent DECIMAL(5, 2) DEFAULT 0,
+  subtotal_sen BIGINT NOT NULL,
+  sst_rate DECIMAL(5, 2) DEFAULT 0,
+  sst_amount_sen BIGINT DEFAULT 0,
+  total_sen BIGINT NOT NULL,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".bill_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_id UUID NOT NULL REFERENCES "{{SCHEMA}}".payments(id) ON DELETE CASCADE,
+  bill_id UUID NOT NULL REFERENCES "{{SCHEMA}}".bills(id) ON DELETE CASCADE,
+  amount_sen BIGINT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".bank_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL, -- e.g. "Maybank Current Account"
+  bank_name VARCHAR(255) NOT NULL,
+  account_no VARCHAR(50) NOT NULL,
+  account_type VARCHAR(20) DEFAULT 'CURRENT', -- CURRENT, SAVINGS
+  currency VARCHAR(3) DEFAULT 'MYR',
+  ledger_account_id UUID REFERENCES "{{SCHEMA}}".accounts(id), -- linked GL account
+  opening_balance_sen BIGINT DEFAULT 0,
+  current_balance_sen BIGINT DEFAULT 0,
+  is_default BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID,
+  deleted_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".bank_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_account_id UUID NOT NULL REFERENCES "{{SCHEMA}}".bank_accounts(id),
+  date DATE NOT NULL,
+  description TEXT NOT NULL,
+  reference VARCHAR(255),
+  amount_sen BIGINT NOT NULL, -- positive = deposit, negative = withdrawal
+  balance_sen BIGINT, -- running balance (optional)
+  source VARCHAR(20) DEFAULT 'IMPORT', -- IMPORT, MANUAL
+  is_reconciled BOOLEAN DEFAULT FALSE,
+  matched_payment_id UUID REFERENCES "{{SCHEMA}}".payments(id),
+  reconciled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".recon_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_account_id UUID NOT NULL REFERENCES "{{SCHEMA}}".bank_accounts(id),
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  statement_balance_sen BIGINT NOT NULL,
+  system_balance_sen BIGINT NOT NULL,
+  difference_sen BIGINT NOT NULL DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'IN_PROGRESS', -- IN_PROGRESS, COMPLETED
+  completed_at TIMESTAMPTZ,
+  completed_by UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".period_locks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  period VARCHAR(7) NOT NULL UNIQUE, -- YYYY-MM format, e.g. '2026-03'
+  lock_level VARCHAR(10) NOT NULL DEFAULT 'SOFT', -- SOFT, HARD
+  locked_by UUID,
+  locked_at TIMESTAMPTZ DEFAULT NOW(),
+  notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".tax_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code VARCHAR(20) NOT NULL UNIQUE, -- e.g. SST_ST_8, SST_ST_6, SST_SALES_10, EXEMPT
+  name VARCHAR(255) NOT NULL,
+  tax_type VARCHAR(20) NOT NULL, -- SERVICE, SALES
+  rate DECIMAL(5, 2) NOT NULL, -- e.g. 8.00, 6.00
+  effective_from DATE NOT NULL,
+  effective_to DATE, -- NULL = still active
+  categories TEXT[], -- service categories this rate applies to, e.g. {'F&B','TELECOM'}
+  is_default BOOLEAN DEFAULT FALSE,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".compliance_obligations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type VARCHAR(50) NOT NULL, -- AR_FILING, FS_CIRCULATION, FS_LODGEMENT, SST_RETURN, EPF, SOCSO, EIS, PCB, FORM_E
+  title VARCHAR(255) NOT NULL,
+  due_date DATE NOT NULL,
+  period VARCHAR(7), -- YYYY-MM for monthly, YYYY for annual
+  status VARCHAR(20) DEFAULT 'UPCOMING', -- UPCOMING, DUE_SOON, OVERDUE, COMPLETED
+  completed_at TIMESTAMPTZ,
+  completed_by UUID,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ─────────────────────────────────────────────
 -- INVENTORY MODULE
 -- ─────────────────────────────────────────────
@@ -318,6 +455,12 @@ CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".employees (
   epf_opted_out BOOLEAN DEFAULT FALSE,
   socso_opted_out BOOLEAN DEFAULT FALSE,
   eis_opted_out BOOLEAN DEFAULT FALSE,
+  -- Tax profile (for PCB calculation)
+  marital_status VARCHAR(20) DEFAULT 'SINGLE', -- SINGLE, MARRIED, DIVORCED, WIDOWED
+  spouse_working BOOLEAN DEFAULT TRUE,
+  children_count INTEGER DEFAULT 0,
+  -- Maternity/paternity tracking
+  confinement_count INTEGER DEFAULT 0,
   -- Emergency contact
   emergency_contact_name VARCHAR(100),
   emergency_contact_phone VARCHAR(20),
@@ -423,6 +566,96 @@ CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".payroll_items (
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(payroll_run_id, employee_id)
+);
+
+-- Public Holiday Calendar
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".public_holidays (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL,
+  date DATE NOT NULL,
+  is_mandatory BOOLEAN DEFAULT FALSE,
+  state VARCHAR(50), -- NULL = national, 'Selangor' = state-specific
+  year INTEGER NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(name, date, year)
+);
+
+-- Employment History (effective-dated job changes)
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".employment_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id UUID NOT NULL REFERENCES "{{SCHEMA}}".employees(id) ON DELETE CASCADE,
+  change_type VARCHAR(30) NOT NULL, -- HIRE, TRANSFER, PROMOTION, SALARY_CHANGE, DEMOTION, TERMINATION
+  effective_date DATE NOT NULL,
+  department_id UUID REFERENCES "{{SCHEMA}}".departments(id),
+  position_id UUID REFERENCES "{{SCHEMA}}".positions(id),
+  employment_type VARCHAR(20),
+  basic_salary_sen BIGINT,
+  previous_department_id UUID,
+  previous_position_id UUID,
+  previous_salary_sen BIGINT,
+  reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID
+);
+
+-- Overtime / Work Entries (manual entry)
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".work_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id UUID NOT NULL REFERENCES "{{SCHEMA}}".employees(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  normal_hours DECIMAL(4,1) DEFAULT 0,
+  overtime_hours DECIMAL(4,1) DEFAULT 0,
+  rest_day_hours DECIMAL(4,1) DEFAULT 0,
+  ph_hours DECIMAL(4,1) DEFAULT 0,
+  is_rest_day BOOLEAN DEFAULT FALSE,
+  is_public_holiday BOOLEAN DEFAULT FALSE,
+  is_absent BOOLEAN DEFAULT FALSE,
+  is_late BOOLEAN DEFAULT FALSE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by UUID,
+  UNIQUE(employee_id, date)
+);
+
+-- Claims Module
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".claim_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  description TEXT,
+  requires_receipt BOOLEAN DEFAULT TRUE,
+  is_taxable BOOLEAN DEFAULT FALSE,
+  monthly_limit_sen BIGINT DEFAULT 0, -- 0 = no limit
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".claims (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_no VARCHAR(50) NOT NULL UNIQUE,
+  employee_id UUID NOT NULL REFERENCES "{{SCHEMA}}".employees(id),
+  claim_date DATE NOT NULL,
+  status VARCHAR(20) DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED, PAID
+  total_amount_sen BIGINT NOT NULL DEFAULT 0,
+  approved_by UUID,
+  approved_at TIMESTAMPTZ,
+  rejection_reason TEXT,
+  payroll_run_id UUID REFERENCES "{{SCHEMA}}".payroll_runs(id), -- linked when paid via payroll
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".claim_lines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_id UUID NOT NULL REFERENCES "{{SCHEMA}}".claims(id) ON DELETE CASCADE,
+  claim_type_id UUID NOT NULL REFERENCES "{{SCHEMA}}".claim_types(id),
+  description TEXT NOT NULL,
+  amount_sen BIGINT NOT NULL,
+  receipt_url TEXT,
+  date DATE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ─────────────────────────────────────────────
@@ -544,3 +777,22 @@ CREATE INDEX IF NOT EXISTS idx_leave_requests_dates ON "{{SCHEMA}}".leave_reques
 CREATE INDEX IF NOT EXISTS idx_payroll_runs_period ON "{{SCHEMA}}".payroll_runs(period_year, period_month);
 CREATE INDEX IF NOT EXISTS idx_payroll_items_run ON "{{SCHEMA}}".payroll_items(payroll_run_id);
 CREATE INDEX IF NOT EXISTS idx_payroll_items_employee ON "{{SCHEMA}}".payroll_items(employee_id);
+CREATE INDEX IF NOT EXISTS idx_public_holidays_year ON "{{SCHEMA}}".public_holidays(year);
+CREATE INDEX IF NOT EXISTS idx_public_holidays_date ON "{{SCHEMA}}".public_holidays(date);
+CREATE INDEX IF NOT EXISTS idx_employment_history_employee ON "{{SCHEMA}}".employment_history(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employment_history_date ON "{{SCHEMA}}".employment_history(effective_date);
+CREATE INDEX IF NOT EXISTS idx_work_entries_employee ON "{{SCHEMA}}".work_entries(employee_id);
+CREATE INDEX IF NOT EXISTS idx_work_entries_date ON "{{SCHEMA}}".work_entries(date);
+CREATE INDEX IF NOT EXISTS idx_claims_employee ON "{{SCHEMA}}".claims(employee_id);
+CREATE INDEX IF NOT EXISTS idx_claims_status ON "{{SCHEMA}}".claims(status);
+
+CREATE INDEX IF NOT EXISTS idx_bills_contact ON "{{SCHEMA}}".bills(contact_id);
+CREATE INDEX IF NOT EXISTS idx_bills_status ON "{{SCHEMA}}".bills(status);
+CREATE INDEX IF NOT EXISTS idx_bills_due_date ON "{{SCHEMA}}".bills(due_date);
+CREATE INDEX IF NOT EXISTS idx_bank_txns_account ON "{{SCHEMA}}".bank_transactions(bank_account_id);
+CREATE INDEX IF NOT EXISTS idx_bank_txns_date ON "{{SCHEMA}}".bank_transactions(date);
+CREATE INDEX IF NOT EXISTS idx_bank_txns_reconciled ON "{{SCHEMA}}".bank_transactions(is_reconciled);
+CREATE INDEX IF NOT EXISTS idx_compliance_type ON "{{SCHEMA}}".compliance_obligations(type);
+CREATE INDEX IF NOT EXISTS idx_compliance_due_date ON "{{SCHEMA}}".compliance_obligations(due_date);
+CREATE INDEX IF NOT EXISTS idx_tax_codes_type ON "{{SCHEMA}}".tax_codes(tax_type);
+CREATE INDEX IF NOT EXISTS idx_tax_codes_effective ON "{{SCHEMA}}".tax_codes(effective_from);

@@ -30,7 +30,7 @@ export class LeaveController {
   @ApiOperation({ summary: 'Create a custom leave type' })
   async createType(
     @CurrentUser() user: CurrentUserData,
-    @Body() body: { name: string; code: string; daysPerYear?: number; isPaid?: boolean; requiresDocument?: boolean },
+    @Body() body: { name: string; code: string; daysPerYear?: number; isPaid?: boolean; requiresDocument?: boolean; carryoverDays?: number },
   ) {
     return { success: true, data: await this.svc.createLeaveType(user.tenantSchema, body) }
   }
@@ -108,7 +108,7 @@ export class LeaveController {
   @Post('balances/:employeeId/init')
   @Audit('leave_balance')
   @RequirePermissions(Permission.HR_CREATE)
-  @ApiOperation({ summary: 'Initialise leave balances for an employee for a given year' })
+  @ApiOperation({ summary: 'Initialise leave balances for an employee (tenure-based)' })
   async initBalances(
     @CurrentUser() user: CurrentUserData,
     @Param('employeeId') employeeId: string,
@@ -117,5 +117,32 @@ export class LeaveController {
     const year = body.year ?? new Date().getFullYear()
     await this.svc.initLeaveBalancesForEmployee(user.tenantSchema, employeeId, year)
     return { success: true, message: `Leave balances initialised for ${year}` }
+  }
+
+  @Post('balances/init-all')
+  @Audit('leave_balance', 'BULK_INIT')
+  @RequirePermissions(Permission.HR_CREATE)
+  @ApiOperation({ summary: 'Bulk initialise leave balances for all active employees' })
+  async initAllBalances(
+    @CurrentUser() user: CurrentUserData,
+    @Body() body: { year?: number },
+  ) {
+    const year = body.year ?? new Date().getFullYear()
+    return { success: true, data: await this.svc.initAllEmployeeBalances(user.tenantSchema, year) }
+  }
+
+  @Get('pro-rata/:employeeId')
+  @RequirePermissions(Permission.HR_VIEW)
+  @ApiOperation({ summary: 'Calculate pro-rata leave for termination' })
+  @ApiQuery({ name: 'terminationDate', required: true })
+  async proRata(
+    @CurrentUser() user: CurrentUserData,
+    @Param('employeeId') employeeId: string,
+    @Query('terminationDate') terminationDate: string,
+  ) {
+    return {
+      success: true,
+      data: await this.svc.calculateProRataLeave(user.tenantSchema, employeeId, terminationDate),
+    }
   }
 }
