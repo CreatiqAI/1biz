@@ -6,6 +6,21 @@ const post = <T>(url: string, body: unknown) => api.post<{ data: T }>(url, body)
 const patch = <T>(url: string, body: unknown) => api.patch<{ data: T }>(url, body).then((r) => r.data.data)
 const del = <T>(url: string) => api.delete<{ data: T }>(url).then((r) => r.data.data)
 
+export interface Employee {
+  id: string
+  employee_no: string
+  full_name: string
+  email: string | null
+  phone: string | null
+  status: string
+  employment_type: string
+  hire_date: string | null
+  basic_salary_sen: string | null
+  department_name: string | null
+  position_name: string | null
+  [key: string]: unknown
+}
+
 // ─── HR Overview ────────────────────────────────────────────────────────────
 
 export function useHrStats() {
@@ -81,10 +96,20 @@ export function useDeletePosition() {
 
 // ─── Employees ───────────────────────────────────────────────────────────────
 
-export function useEmployees(status?: string) {
+export function useEmployees(statusOrParams?: string | { status?: string; search?: string; page?: number; limit?: number }) {
+  const params = typeof statusOrParams === 'string' ? { status: statusOrParams } : statusOrParams
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page) qs.set('page', String(params.page))
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const queryString = qs.toString()
   return useQuery({
-    queryKey: ['employees', status],
-    queryFn: () => get<any[]>(`/hr/employees${status ? `?status=${status}` : ''}`),
+    queryKey: ['employees', params?.status, params?.search, params?.page],
+    queryFn: async (): Promise<Employee[]> => {
+      const r = await api.get<any>(`/hr/employees${queryString ? `?${queryString}` : ''}`)
+      return r.data?.data ?? []
+    },
   })
 }
 

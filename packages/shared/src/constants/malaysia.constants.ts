@@ -158,4 +158,135 @@ export const MYINVOIS = {
   SANDBOX_URL: 'https://preprod-api.myinvois.hasil.gov.my',
   PRODUCTION_URL: 'https://api.myinvois.hasil.gov.my',
   DOCUMENT_VERSION: '1.0',
+  TOKEN_ENDPOINT: '/connect/token',
+  SUBMIT_ENDPOINT: '/api/v1.0/documentsubmissions/',
+  STATUS_ENDPOINT: '/api/v1.0/documentsubmissions/',
+  DOCUMENT_ENDPOINT: '/api/v1.0/documents/',
+  VALIDATE_TIN_ENDPOINT: '/api/v1.0/taxpayer/validate/',
+  // Token cache TTL (55 min — tokens last 60 min)
+  TOKEN_CACHE_TTL_MS: 55 * 60 * 1000,
+  // Rate limits
+  MAX_SUBMISSIONS_PER_MINUTE: 100,
+  MAX_DOCUMENTS_PER_BATCH: 100,
+  MAX_BATCH_SIZE_BYTES: 5 * 1024 * 1024, // 5MB
 } as const
+
+// MyInvois Document Type Codes (LHDN)
+export const MYINVOIS_DOC_TYPES = {
+  INVOICE: '01',
+  CREDIT_NOTE: '02',
+  DEBIT_NOTE: '03',
+  REFUND_NOTE: '04',
+  SELF_BILLED_INVOICE: '11',
+  SELF_BILLED_CREDIT_NOTE: '12',
+  SELF_BILLED_DEBIT_NOTE: '13',
+  SELF_BILLED_REFUND_NOTE: '14',
+} as const
+
+// MyInvois Tax Type Codes
+export const MYINVOIS_TAX_TYPES = {
+  '01': 'Sales Tax',
+  '02': 'Service Tax',
+  '03': 'Tourism Tax',
+  '04': 'High-Value Goods Tax',
+  '05': 'Sales Tax on Low Value Goods',
+  '06': 'Not Applicable',
+  'E': 'Tax Exemption',
+} as const
+
+// MyInvois Classification Codes (common ones)
+export const MYINVOIS_CLASSIFICATION_CODES = {
+  '001': 'Breastfeeding equipment',
+  '002': 'Child care centres and kindergartens fees',
+  '003': 'Computer, smartphone or tablet',
+  '004': 'Consolidated e-Invoice',
+  '005': 'Construction materials',
+  '006': 'Disbursement',
+  '007': 'Donation',
+  '008': 'e-Commerce - Loss/damage/return',
+  '009': 'Education fees',
+  '010': 'Electric vehicle charging',
+  '011': 'Employee/Freelancer wages',
+  '012': 'Freight charges',
+  '013': 'Goods on consignment',
+  '014': 'Gym membership',
+  '015': 'Insurance',
+  '016': 'Interest',
+  '017': 'Internet subscription',
+  '018': 'Land and building',
+  '019': 'Medical examination for learning disability',
+  '020': 'Medical examination, treatment and vaccination',
+  '021': 'Monetary payment, wages, loans',
+  '022': 'Motor vehicle',
+  '023': 'Others',
+} as const
+
+// MyInvois Payment Method Codes
+export const MYINVOIS_PAYMENT_METHODS = {
+  '01': 'Cash',
+  '02': 'Cheque',
+  '03': 'Transfer (Credit/Debit)',
+  '04': 'E-wallet/Digital payment',
+  '05': 'Digital Bank',
+  '06': 'Banking Product',
+  '07': 'Other',
+} as const
+
+// MyInvois Unit Codes (UN/ECE Rec 20)
+export const MYINVOIS_UNIT_CODES = {
+  EA: 'Each / Unit',
+  KGM: 'Kilogram',
+  MTR: 'Metre',
+  LTR: 'Litre',
+  PCE: 'Piece',
+  SET: 'Set',
+  HUR: 'Hour',
+  DAY: 'Day',
+  MON: 'Month',
+  C62: 'One (dimensionless)',
+} as const
+
+// MyInvois E-Invoice Status
+export const MYINVOIS_STATUSES = {
+  NOT_SUBMITTED: 'NOT_SUBMITTED',
+  PENDING: 'PENDING',
+  VALID: 'VALID',
+  INVALID: 'INVALID',
+  CANCELLED: 'CANCELLED',
+} as const
+
+// Top MSIC codes for Malaysian businesses (5-digit codes)
+export const MSIC_CODES = [
+  { code: '46100', desc: 'Wholesale on a fee or contract basis' },
+  { code: '46209', desc: 'Wholesale of other agricultural raw materials' },
+  { code: '46510', desc: 'Wholesale of computers and software' },
+  { code: '46900', desc: 'Non-specialized wholesale trade' },
+  { code: '47111', desc: 'Retail sale in non-specialized stores (mini market)' },
+  { code: '47191', desc: 'Retail sale of other goods in non-specialized stores' },
+  { code: '47300', desc: 'Retail sale of automotive fuel' },
+  { code: '47721', desc: 'Retail sale of pharmaceutical goods' },
+  { code: '49100', desc: 'Freight rail transport' },
+  { code: '56101', desc: 'Restaurants with table service' },
+  { code: '56103', desc: 'Food stalls / hawkers' },
+  { code: '62010', desc: 'Computer programming activities' },
+  { code: '62020', desc: 'Computer consultancy and management' },
+  { code: '62090', desc: 'Other IT and computer service activities' },
+  { code: '63110', desc: 'Data processing, hosting and related' },
+  { code: '64191', desc: 'Other monetary intermediation' },
+  { code: '66199', desc: 'Other auxiliary financial services' },
+  { code: '68101', desc: 'Real estate activities with own or leased property' },
+  { code: '69100', desc: 'Legal activities' },
+  { code: '69200', desc: 'Accounting, bookkeeping and auditing' },
+  { code: '70201', desc: 'Management consultancy activities' },
+  { code: '71100', desc: 'Architectural and engineering activities' },
+  { code: '73100', desc: 'Advertising' },
+  { code: '74100', desc: 'Specialized design activities' },
+  { code: '74909', desc: 'Other professional activities n.e.c.' },
+  { code: '82190', desc: 'Photocopying, document preparation and support' },
+  { code: '85100', desc: 'Pre-primary and primary education' },
+  { code: '85210', desc: 'General secondary education' },
+  { code: '86101', desc: 'Hospital activities (private)' },
+  { code: '86201', desc: 'General medical practice (private clinic)' },
+  { code: '96021', desc: 'Hairdressing and barber' },
+  { code: '96022', desc: 'Beauty treatment services' },
+] as const

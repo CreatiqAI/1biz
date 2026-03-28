@@ -33,17 +33,52 @@ export class InvoicesService {
     private readonly stockService: StockService,
   ) {}
 
-  async findAll(tenantSchema: string, status?: string) {
-    const statusFilter = status ? `AND i.status = '${status}'` : ''
-    return this.prisma.$queryRawUnsafe(
+  async findAll(tenantSchema: string, status?: string, search?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 10000)
+    const params: any[] = []
+    const conditions = ['i.deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (status) {
+      paramIdx++
+      conditions.push(`i.status = $${paramIdx}`)
+      params.push(status)
+    }
+    if (search) {
+      paramIdx++
+      conditions.push(`(i.invoice_no ILIKE $${paramIdx} OR c.name ILIKE $${paramIdx})`)
+      params.push(`%${search}%`)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".invoices i
+       JOIN "${tenantSchema}".contacts c ON c.id = i.contact_id
+       WHERE ${where}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe(
       `SELECT i.id, i.invoice_no, i.issue_date, i.due_date, i.status,
               i.total_sen, i.paid_sen, i.balance_sen, i.currency,
               c.name as contact_name
        FROM "${tenantSchema}".invoices i
        JOIN "${tenantSchema}".contacts c ON c.id = i.contact_id
-       WHERE i.deleted_at IS NULL ${statusFilter}
-       ORDER BY i.issue_date DESC`,
+       WHERE ${where}
+       ORDER BY i.issue_date DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
     )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async findOne(tenantSchema: string, id: string) {
@@ -66,17 +101,6 @@ export class InvoicesService {
   }
 
   async create(tenantSchema: string, dto: CreateInvoiceDto, userId: string, tenantId: string) {
-    // Get next invoice number
-    const settingsRows = await this.prisma.$queryRawUnsafe<{
-      invoicePrefix: string
-      invoiceNextNumber: number
-    }[]>(
-      `SELECT "invoicePrefix", "invoiceNextNumber" FROM public.tenant_settings WHERE "tenantId" = $1`,
-      tenantId,
-    )
-    const settings = settingsRows[0]
-    const invoiceNo = `${settings.invoicePrefix}-${String(settings.invoiceNextNumber).padStart(5, '0')}`
-
     // Calculate totals
     let subtotalSen = 0
     let sstAmountSen = 0
@@ -92,6 +116,17 @@ export class InvoicesService {
     const totalSen = subtotalSen + sstAmountSen
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // Lock + read settings inside transaction to prevent race condition
+      const settingsRows = await tx.$queryRawUnsafe<{
+        invoicePrefix: string
+        invoiceNextNumber: number
+      }[]>(
+        `SELECT "invoicePrefix", "invoiceNextNumber" FROM public.tenant_settings WHERE "tenantId" = $1 FOR UPDATE`,
+        tenantId,
+      )
+      const settings = settingsRows[0]
+      const invoiceNo = `${settings.invoicePrefix}-${String(settings.invoiceNextNumber).padStart(5, '0')}`
+
       // Create invoice
       const invoiceRows = await tx.$queryRawUnsafe<{ id: string }[]>(
         `INSERT INTO "${tenantSchema}".invoices
@@ -140,26 +175,28 @@ export class InvoicesService {
     })
 
     // Deduct stock for product lines (outside transaction — stock has its own)
-    await this.deductStockForInvoice(tenantSchema, result.id, dto.lines, userId)
+    const stockWarnings = await this.deductStockForInvoice(tenantSchema, result.id, dto.lines, userId)
 
-    return result
+    return { ...result, stockWarnings }
   }
 
-  /** Deduct stock for each invoice line that has a tracked product */
+  /** Deduct stock for each invoice line that has a tracked product. Returns warnings for failed deductions. */
   private async deductStockForInvoice(
     tenantSchema: string,
     invoiceId: string,
     lines: InvoiceLineInput[],
     userId: string,
-  ) {
+  ): Promise<string[]> {
+    const warnings: string[] = []
     const productLines = lines.filter((l) => l.productId)
-    if (!productLines.length) return
+    if (!productLines.length) return warnings
 
     // Get default warehouse
     const defaultWarehouse = await this.getDefaultWarehouse(tenantSchema)
     if (!defaultWarehouse) {
       this.logger.warn('No default warehouse found — skipping stock deduction')
-      return
+      warnings.push('No warehouse found — stock was not deducted')
+      return warnings
     }
 
     for (const line of productLines) {
@@ -179,8 +216,10 @@ export class InvoicesService {
         }, userId)
       } catch (err) {
         this.logger.error(`Failed to deduct stock for product ${line.productId}: ${err}`)
+        warnings.push(`Stock deduction failed for product ${line.productId}: ${String(err)}`)
       }
     }
+    return warnings
   }
 
   async updateStatus(tenantSchema: string, id: string, status: string, userId?: string) {

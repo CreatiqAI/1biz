@@ -24,6 +24,8 @@ interface NavGroup {
   items: NavItem[]
   /** If set, user needs at least one of these permissions to see this group */
   requiredPermissions?: Permission[]
+  /** If set, tenant must have this module enabled to see this group */
+  requiredModule?: string
 }
 
 const adminGroup: NavGroup = {
@@ -32,7 +34,9 @@ const adminGroup: NavGroup = {
   activeBg: 'bg-rose-50',
   accentBg: 'bg-rose-500',
   items: [
-    { label: 'Platform', href: '/admin', iconName: 'shield' },
+    { label: 'Platform',  href: '/admin',          iconName: 'shield' },
+    { label: 'Tenants',   href: '/admin/tenants',  iconName: 'building' },
+    { label: 'Modules',   href: '/admin/modules',  iconName: 'box' },
   ],
 }
 
@@ -53,6 +57,7 @@ const baseNavGroups: NavGroup[] = [
     activeBg: 'bg-emerald-50',
     accentBg: 'bg-emerald-500',
     requiredPermissions: [Permission.ACCOUNTING_VIEW],
+    requiredModule: 'ACCOUNTING',
     items: [
       { label: 'Overview',   href: '/accounting',              iconName: 'chart' },
       { label: 'Invoices',   href: '/accounting/invoices',     iconName: 'invoice' },
@@ -71,6 +76,7 @@ const baseNavGroups: NavGroup[] = [
     activeBg: 'bg-violet-50',
     accentBg: 'bg-violet-500',
     requiredPermissions: [Permission.CRM_VIEW],
+    requiredModule: 'CRM',
     items: [
       { label: 'Overview',      href: '/crm',                 iconName: 'target' },
       { label: 'Leads',         href: '/crm/leads',           iconName: 'leads' },
@@ -84,6 +90,7 @@ const baseNavGroups: NavGroup[] = [
     activeBg: 'bg-amber-50',
     accentBg: 'bg-amber-500',
     requiredPermissions: [Permission.INVENTORY_VIEW],
+    requiredModule: 'INVENTORY',
     items: [
       { label: 'Products',   href: '/inventory/products',   iconName: 'box' },
       { label: 'Warehouses', href: '/inventory/warehouses', iconName: 'building' },
@@ -96,6 +103,7 @@ const baseNavGroups: NavGroup[] = [
     activeBg: 'bg-sky-50',
     accentBg: 'bg-sky-500',
     requiredPermissions: [Permission.HR_VIEW],
+    requiredModule: 'HR',
     items: [
       { label: 'Overview',    href: '/hr',              iconName: 'home' },
       { label: 'Employees',   href: '/hr/employees',    iconName: 'person' },
@@ -132,10 +140,15 @@ export function Sidebar() {
     const roles = user?.roles ?? []
     const isSuperAdmin = user?.isSuperAdmin || roles.includes('super_admin')
 
-    // Filter groups based on user permissions
+    const enabledModules = user?.enabledModules ?? []
+
+    // Filter groups based on user permissions + enabled modules
     const filtered = baseNavGroups.filter((g) => {
       if (!g.requiredPermissions) return true // no restriction (e.g. Dashboard)
-      return hasAnyPermission(roles, g.requiredPermissions)
+      if (!hasAnyPermission(roles, g.requiredPermissions)) return false
+      // Check module access (super admins see everything)
+      if (g.requiredModule && !isSuperAdmin && !enabledModules.includes(g.requiredModule)) return false
+      return true
     })
 
     return isSuperAdmin ? [adminGroup, ...filtered] : filtered

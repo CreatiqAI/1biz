@@ -31,10 +31,20 @@ export function useAccounts() {
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
 
-export function useContacts(type?: 'CUSTOMER' | 'SUPPLIER' | 'BOTH') {
+export function useContacts(typeOrParams?: string | { type?: string; search?: string; page?: number; limit?: number }) {
+  const params = typeof typeOrParams === 'string' ? { type: typeOrParams } : typeOrParams
+  const qs = new URLSearchParams()
+  if (params?.type) qs.set('type', params.type)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page) qs.set('page', String(params.page))
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const queryString = qs.toString()
   return useQuery({
-    queryKey: ['contacts', type],
-    queryFn: () => get<any[]>(`/accounting/contacts${type ? `?type=${type}` : ''}`),
+    queryKey: ['contacts', params?.type, params?.search, params?.page],
+    queryFn: async () => {
+      const r = await api.get<any>(`/accounting/contacts${queryString ? `?${queryString}` : ''}`)
+      return r.data?.data ?? []
+    },
   })
 }
 
@@ -70,10 +80,34 @@ export function useDeleteContact() {
 
 // ─── Invoices ────────────────────────────────────────────────────────────────
 
-export function useInvoices(status?: string) {
+export interface PaginationMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
+export function useInvoices(statusOrParams?: string | { status?: string; search?: string; page?: number; limit?: number }) {
+  const params = typeof statusOrParams === 'string' ? { status: statusOrParams } : statusOrParams
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page) qs.set('page', String(params.page))
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const queryString = qs.toString()
   return useQuery({
-    queryKey: ['invoices', status],
-    queryFn: () => get<any[]>(`/accounting/invoices${status ? `?status=${status}` : ''}`),
+    queryKey: ['invoices', params?.status, params?.search, params?.page],
+    queryFn: async () => {
+      const r = await api.get<any>(`/accounting/invoices${queryString ? `?${queryString}` : ''}`)
+      // API returns { success, data: [...], meta: { page, limit, total, totalPages } }
+      const body = r.data
+      if (body?.meta) {
+        return { items: (body.data ?? []) as any[], meta: body.meta as PaginationMeta }
+      }
+      // Fallback for non-paginated responses
+      const items = Array.isArray(body?.data) ? body.data : []
+      return { items: items as any[], meta: null as PaginationMeta | null }
+    },
   })
 }
 
@@ -102,6 +136,19 @@ export function useUpdateInvoiceStatus() {
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       patch(`/accounting/invoices/${id}/status`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['accounting-stats'] })
+    },
+  })
+}
+
+export function useBulkUpdateInvoiceStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
+      patch('/accounting/invoices/bulk/status', { ids, status }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
@@ -158,10 +205,20 @@ export function useRecordPayment() {
 
 // ─── Journal Entries ─────────────────────────────────────────────────────────
 
-export function useJournals(status?: string) {
+export function useJournals(statusOrParams?: string | { status?: string; search?: string; page?: number; limit?: number }) {
+  const params = typeof statusOrParams === 'string' ? { status: statusOrParams } : statusOrParams
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page) qs.set('page', String(params.page))
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const queryString = qs.toString()
   return useQuery({
-    queryKey: ['journals', status],
-    queryFn: () => get<any[]>(`/accounting/journals${status ? `?status=${status}` : ''}`),
+    queryKey: ['journals', params?.status, params?.search, params?.page],
+    queryFn: async () => {
+      const r = await api.get<any>(`/accounting/journals${queryString ? `?${queryString}` : ''}`)
+      return r.data?.data ?? []
+    },
   })
 }
 
@@ -210,10 +267,20 @@ export function useDeleteJournal() {
 
 // ─── Bills (Accounts Payable) ────────────────────────────────────────────────
 
-export function useBills(status?: string) {
+export function useBills(statusOrParams?: string | { status?: string; search?: string; page?: number; limit?: number }) {
+  const params = typeof statusOrParams === 'string' ? { status: statusOrParams } : statusOrParams
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.search) qs.set('search', params.search)
+  if (params?.page) qs.set('page', String(params.page))
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const queryString = qs.toString()
   return useQuery({
-    queryKey: ['bills', status],
-    queryFn: () => get<any[]>(`/accounting/bills${status ? `?status=${status}` : ''}`),
+    queryKey: ['bills', params?.status, params?.search, params?.page],
+    queryFn: async () => {
+      const r = await api.get<any>(`/accounting/bills${queryString ? `?${queryString}` : ''}`)
+      return r.data?.data ?? []
+    },
   })
 }
 
@@ -505,6 +572,52 @@ export function useSeedTaxCodes() {
   return useMutation({
     mutationFn: () => post('/accounting/tax/seed', {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tax-codes'] }),
+  })
+}
+
+// ─── E-Invoice (MyInvois) ────────────────────────────────────────────
+
+export function useSubmitEInvoice() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (invoiceId: string) =>
+      post('/accounting/myinvois/submit/' + invoiceId, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+    },
+  })
+}
+
+export function useEInvoiceStatus(invoiceId: string) {
+  return useQuery({
+    queryKey: ['einvoice-status', invoiceId],
+    queryFn: () => get<any>('/accounting/myinvois/status/' + invoiceId),
+    enabled: !!invoiceId,
+    refetchInterval: (query) => {
+      const data = query.state.data as any
+      if (data?.status === 'PENDING') return 5000
+      return false
+    },
+  })
+}
+
+export function useCancelEInvoice() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (invoiceId: string) =>
+      post('/accounting/myinvois/cancel/' + invoiceId, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['einvoice-status'] })
+    },
+  })
+}
+
+export function useValidateTin(tin: string) {
+  return useQuery({
+    queryKey: ['validate-tin', tin],
+    queryFn: () => get<any>('/accounting/myinvois/validate-tin/' + tin),
+    enabled: !!tin && tin.length >= 10,
   })
 }
 

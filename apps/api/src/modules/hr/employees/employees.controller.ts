@@ -1,26 +1,55 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Res } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
+import { Response } from 'express'
 import { EmployeesService, CreateEmployeeDto } from './employees.service'
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../../auth/guards/roles.guard'
 import { CurrentUser, CurrentUserData } from '../../auth/decorators/current-user.decorator'
 import { RequirePermissions } from '../../auth/decorators/permissions.decorator'
 import { Permission } from '@1biz/shared'
+import { AppModule } from '@prisma/client'
+import { ModuleGuard } from '../../auth/guards/module.guard'
+import { RequireModules } from '../../auth/decorators/modules.decorator'
 import { Audit } from '../../audit/audit.decorator'
+import { toCsv, sendCsv } from '../../../common/export.helper'
 
 @ApiTags('hr')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ModuleGuard)
+@RequireModules(AppModule.HR)
 @Controller('hr/employees')
 export class EmployeesController {
   constructor(private readonly svc: EmployeesService) {}
 
   @Get()
   @RequirePermissions(Permission.HR_VIEW)
-  @ApiOperation({ summary: 'List all employees' })
+  @ApiOperation({ summary: 'List employees with pagination, search, and optional CSV export' })
   @ApiQuery({ name: 'status', required: false, enum: ['ACTIVE', 'PROBATION', 'RESIGNED', 'TERMINATED', 'SUSPENDED'] })
-  async findAll(@CurrentUser() user: CurrentUserData, @Query('status') status?: string) {
-    return { success: true, data: await this.svc.findAll(user.tenantSchema, status) }
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'format', required: false })
+  async findAll(
+    @CurrentUser() user: CurrentUserData,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('format') format?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const p = page ? parseInt(page) : 1
+    const l = limit ? parseInt(limit) : 25
+    const result = await this.svc.findAll(user.tenantSchema, status, search, format === 'csv' ? 1 : p, format === 'csv' ? 10000 : l)
+
+    if (format === 'csv' && res) {
+      const headers = ['Employee No', 'Name', 'Email', 'Phone', 'Status', 'Department', 'Position', 'Hire Date', 'Salary (RM)']
+      const keys = ['employee_no', 'full_name', 'email', 'phone', 'status', 'department_name', 'position_name', 'hire_date', 'salary_rm']
+      const rows = (result.data as any[]).map((r: any) => ({ ...r, salary_rm: (Number(r.basic_salary_sen) / 100).toFixed(2) }))
+      return sendCsv(res, 'employees.csv', toCsv(headers, rows, keys))
+    }
+
+    return { success: true, ...result }
   }
 
   @Get(':id')

@@ -6,11 +6,15 @@ import { RolesGuard } from '../auth/guards/roles.guard'
 import { CurrentUser, CurrentUserData } from '../auth/decorators/current-user.decorator'
 import { RequirePermissions } from '../auth/decorators/permissions.decorator'
 import { Permission } from '@1biz/shared'
+import { AppModule } from '@prisma/client'
+import { ModuleGuard } from '../auth/guards/module.guard'
+import { RequireModules } from '../auth/decorators/modules.decorator'
 import { Audit } from '../audit/audit.decorator'
 
 @ApiTags('inventory')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ModuleGuard)
+@RequireModules(AppModule.INVENTORY)
 @Controller('inventory/warehouses')
 export class WarehousesController {
   constructor(private readonly warehousesService: WarehousesService) {}

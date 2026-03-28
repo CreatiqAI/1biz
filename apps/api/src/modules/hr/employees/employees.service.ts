@@ -43,9 +43,38 @@ export interface CreateEmployeeDto {
 export class EmployeesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(tenantSchema: string, status?: string) {
-    const statusFilter = status ? `AND e.status = '${status}'` : ''
-    return this.prisma.$queryRawUnsafe<any[]>(
+  async findAll(tenantSchema: string, status?: string, search?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 500)
+    const params: any[] = []
+    const conditions = ['e.deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (status) {
+      paramIdx++
+      conditions.push(`e.status = $${paramIdx}`)
+      params.push(status)
+    }
+    if (search) {
+      paramIdx++
+      conditions.push(`(e.full_name ILIKE $${paramIdx} OR e.email ILIKE $${paramIdx} OR e.employee_no ILIKE $${paramIdx})`)
+      params.push(`%${search}%`)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".employees e WHERE ${where}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.id, e.employee_no, e.full_name, e.email, e.phone,
               e.status, e.employment_type, e.hire_date, e.basic_salary_sen,
               e.gender, e.date_of_birth,
@@ -54,9 +83,13 @@ export class EmployeesService {
        FROM "${tenantSchema}".employees e
        LEFT JOIN "${tenantSchema}".departments d ON d.id = e.department_id
        LEFT JOIN "${tenantSchema}".positions p ON p.id = e.position_id
-       WHERE e.deleted_at IS NULL ${statusFilter}
-       ORDER BY e.full_name`,
+       WHERE ${where}
+       ORDER BY e.full_name
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
     )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async findOne(tenantSchema: string, id: string) {

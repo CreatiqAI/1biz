@@ -93,6 +93,10 @@ export type ToolName =
   | 'seed_tax_codes'
   | 'generate_monthly_obligations'
   | 'complete_compliance_obligation'
+  // ─── E-Invoice (MyInvois) ──────────────────────────────────────────────
+  | 'get_einvoice_status'
+  | 'submit_einvoice'
+  | 'cancel_einvoice'
 
 // Helper: string enum property
 function enumProp(description: string, values: string[]) {
@@ -1187,6 +1191,41 @@ export const CHAT_TOOLS: Tool[] = [
         obligationId: strProp('Compliance obligation UUID.'),
       },
       required: ['obligationId'],
+    },
+  },
+
+  // ─── E-Invoice (MyInvois / LHDN) ──────────────────────────────────────────
+  {
+    name: 'get_einvoice_status',
+    description: 'Get the e-invoice (MyInvois) submission status for an invoice. Returns status (NOT_SUBMITTED, PENDING, VALID, INVALID, CANCELLED), UUID, validation URL, and any errors.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoiceId: strProp('Invoice UUID. Call get_invoices to find this.'),
+      },
+      required: ['invoiceId'],
+    },
+  },
+  {
+    name: 'submit_einvoice',
+    description: 'Submit an invoice to LHDN MyInvois for e-invoicing. The invoice must be in SENT, PARTIAL, OVERDUE, or PAID status. Requires MyInvois credentials configured in Settings > E-Invoice.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoiceId: strProp('Invoice UUID to submit.'),
+      },
+      required: ['invoiceId'],
+    },
+  },
+  {
+    name: 'cancel_einvoice',
+    description: 'Cancel a validated e-invoice on LHDN MyInvois. Only VALID e-invoices can be cancelled (within 72 hours of validation).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoiceId: strProp('Invoice UUID to cancel.'),
+      },
+      required: ['invoiceId'],
     },
   },
 ]

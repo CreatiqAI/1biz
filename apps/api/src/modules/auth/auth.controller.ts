@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Delete,
   Body,
   HttpCode,
   HttpStatus,
@@ -53,6 +54,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Body() dto: RefreshTokenDto) {
@@ -75,5 +77,18 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user info from token' })
   async me(@CurrentUser() user: CurrentUserData) {
     return { success: true, data: user }
+  }
+
+  @Delete('account')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete your account and all associated data (PDPA compliance)' })
+  @ApiResponse({ status: 200, description: 'Account deleted successfully' })
+  async deleteAccount(
+    @CurrentUser() user: CurrentUserData,
+    @Body() body: { password: string; confirmation: string },
+  ) {
+    await this.authService.deleteAccount(user.userId, user.tenantId, body.password, body.confirmation)
+    return { success: true, message: 'Account and all associated data have been permanently deleted.' }
   }
 }

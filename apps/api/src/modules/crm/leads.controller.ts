@@ -4,11 +4,15 @@ import { LeadsService, CreateLeadDto } from './leads.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { CurrentUser, CurrentUserData } from '../auth/decorators/current-user.decorator'
+import { AppModule } from '@prisma/client'
+import { ModuleGuard } from '../auth/guards/module.guard'
+import { RequireModules } from '../auth/decorators/modules.decorator'
 import { Audit } from '../audit/audit.decorator'
 
 @ApiTags('crm')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, ModuleGuard)
+@RequireModules(AppModule.CRM)
 @Controller('crm/leads')
 export class LeadsController {
   constructor(private readonly leadsService: LeadsService) {}

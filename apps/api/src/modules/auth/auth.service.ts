@@ -11,7 +11,7 @@ import { TenantSchemaService } from '../../prisma/tenant-schema.service'
 import { TokenService } from './token.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
-import { AuthResponse, TokenPair } from '@1biz/shared'
+import { AuthResponse, TokenPair, PLAN_MODULES } from '@1biz/shared'
 
 @Injectable()
 export class AuthService {
@@ -118,6 +118,7 @@ export class AuthService {
         roles: ['admin'],
         tenantId: tenant.id,
         isActive: user.isActive,
+        enabledModules: PLAN_MODULES['STARTER'] ?? [],
         createdAt: user.createdAt.toISOString(),
       },
       tokens,
@@ -155,6 +156,7 @@ export class AuthService {
     // Multi-tenant switching is handled separately
     const tenantUser = user.tenants[0]
     const tenant = tenantUser.tenant
+    const enabledModules = await this.resolveEnabledModules(tenant.id, tenant.plan, tenant.pricingModel)
 
     // Update last login
     await this.prisma.user.update({
@@ -191,6 +193,7 @@ export class AuthService {
         tenantId: tenant.id,
         isActive: user.isActive,
         isSuperAdmin: user.isSuperAdmin,
+        enabledModules,
         createdAt: user.createdAt.toISOString(),
       },
       tokens,
@@ -221,6 +224,94 @@ export class AuthService {
     if (!user || !user.isActive) return null
     const isValid = await bcrypt.compare(password, user.passwordHash)
     return isValid ? user : null
+  }
+
+  /**
+   * Delete user account + company data (PDPA compliance).
+   * Only the owner can delete the entire company.
+   * Non-owners are removed from the tenant only.
+   */
+  async deleteAccount(
+    userId: string,
+    tenantId: string,
+    password: string,
+    confirmation: string,
+  ): Promise<void> {
+    if (confirmation !== 'DELETE MY ACCOUNT') {
+      throw new BadRequestException('Please type "DELETE MY ACCOUNT" to confirm.')
+    }
+
+    // Verify password
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { tenants: { include: { tenant: true } } },
+    })
+    if (!user) throw new UnauthorizedException('User not found')
+
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
+    if (!isPasswordValid) throw new UnauthorizedException('Invalid password')
+
+    // Check if user is the tenant owner
+    const tenantUser = user.tenants.find((tu) => tu.tenantId === tenantId)
+    if (!tenantUser) throw new BadRequestException('User is not in this tenant')
+
+    if (tenantUser.isOwner) {
+      // Owner: delete entire company + schema + all data
+      const tenant = tenantUser.tenant
+
+      this.logger.warn(`Account deletion: Owner ${user.email} deleting tenant ${tenant.name} (${tenant.schema})`)
+
+      // 1. Drop the tenant schema (all business data)
+      await this.tenantSchemaService.dropTenantSchema(tenant.schema)
+
+      // 2. Delete all public-schema records in a transaction
+      await this.prisma.$transaction(async (tx) => {
+        await tx.tenantSettings.deleteMany({ where: { tenantId } })
+        await tx.subscription.deleteMany({ where: { tenantId } })
+        // Remove all users from tenant
+        const tenantUsers = await tx.tenantUser.findMany({ where: { tenantId } })
+        await tx.tenantUser.deleteMany({ where: { tenantId } })
+        // Remove refresh tokens for all tenant users
+        for (const tu of tenantUsers) {
+          await tx.refreshToken.deleteMany({ where: { userId: tu.userId } })
+        }
+        // Delete the tenant itself
+        await tx.tenant.delete({ where: { id: tenantId } })
+        // Delete the requesting user's platform account
+        await tx.user.delete({ where: { id: userId } })
+      })
+
+      this.logger.warn(`Account deletion complete: ${user.email} / ${tenant.name}`)
+    } else {
+      // Non-owner: just remove from tenant + delete user if no other tenants
+      this.logger.warn(`Account deletion: Non-owner ${user.email} leaving tenant ${tenantId}`)
+
+      await this.prisma.tenantUser.delete({
+        where: { userId_tenantId: { userId, tenantId } },
+      })
+
+      // Revoke all tokens
+      await this.tokenService.revokeAllUserTokens(userId)
+
+      // If user has no other tenants, delete their platform account
+      const remaining = await this.prisma.tenantUser.count({ where: { userId } })
+      if (remaining === 0) {
+        await this.prisma.refreshToken.deleteMany({ where: { userId } })
+        await this.prisma.user.delete({ where: { id: userId } })
+      }
+    }
+  }
+
+  /** Resolve which modules a tenant has access to */
+  private async resolveEnabledModules(tenantId: string, plan: string, pricingModel: string): Promise<string[]> {
+    if (pricingModel === 'MODULAR') {
+      const mods = await this.prisma.tenantModule.findMany({
+        where: { tenantId, isActive: true },
+        select: { module: true },
+      })
+      return mods.map((m) => m.module)
+    }
+    return PLAN_MODULES[plan] ?? []
   }
 
   private generateSlug(companyName: string): string {

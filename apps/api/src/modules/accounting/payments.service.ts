@@ -16,17 +16,45 @@ export interface RecordPaymentDto {
 export class PaymentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(tenantSchema: string, type?: string) {
-    const typeFilter = type ? `AND p.type = '${type}'` : ''
-    return this.prisma.$queryRawUnsafe(
+  async findAll(tenantSchema: string, type?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 500)
+    const params: any[] = []
+    const conditions = ['p.deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (type) {
+      paramIdx++
+      conditions.push(`p.type = $${paramIdx}`)
+      params.push(type)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".payments p WHERE ${where}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe(
       `SELECT p.id, p.payment_no, p.type, p.date, p.amount_sen,
               p.method, p.reference, p.notes,
               c.name AS contact_name
        FROM "${tenantSchema}".payments p
        JOIN "${tenantSchema}".contacts c ON c.id = p.contact_id
-       WHERE p.deleted_at IS NULL ${typeFilter}
-       ORDER BY p.date DESC`,
+       WHERE ${where}
+       ORDER BY p.date DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
     )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async create(tenantSchema: string, dto: RecordPaymentDto, userId: string) {

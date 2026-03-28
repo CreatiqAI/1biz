@@ -35,6 +35,7 @@ export class UsersController {
   }
 
   @Post('me/change-password')
+  @Audit('user', 'CHANGE_PASSWORD')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change my password' })
   async changePassword(

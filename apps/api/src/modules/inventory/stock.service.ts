@@ -20,14 +20,24 @@ export class StockService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getStockLevel(tenantSchema: string, productId: string, warehouseId?: string) {
-    const warehouseFilter = warehouseId ? `AND sl.warehouse_id = '${warehouseId}'::uuid` : ''
+    if (warehouseId) {
+      return this.prisma.$queryRawUnsafe(
+        `SELECT sl.product_id, sl.warehouse_id, sl.quantity, sl.reserved_quantity,
+                sl.average_cost_sen, w.name as warehouse_name, p.name as product_name
+         FROM "${tenantSchema}".stock_levels sl
+         JOIN "${tenantSchema}".warehouses w ON w.id = sl.warehouse_id
+         JOIN "${tenantSchema}".products p ON p.id = sl.product_id
+         WHERE sl.product_id = $1::uuid AND sl.warehouse_id = $2::uuid`,
+        productId, warehouseId,
+      )
+    }
     return this.prisma.$queryRawUnsafe(
       `SELECT sl.product_id, sl.warehouse_id, sl.quantity, sl.reserved_quantity,
               sl.average_cost_sen, w.name as warehouse_name, p.name as product_name
        FROM "${tenantSchema}".stock_levels sl
        JOIN "${tenantSchema}".warehouses w ON w.id = sl.warehouse_id
        JOIN "${tenantSchema}".products p ON p.id = sl.product_id
-       WHERE sl.product_id = $1::uuid ${warehouseFilter}`,
+       WHERE sl.product_id = $1::uuid`,
       productId,
     )
   }

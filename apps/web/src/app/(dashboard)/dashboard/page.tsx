@@ -139,27 +139,55 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Monthly Revenue Chart (simple table) */}
-      {(stats?.revenueChart ?? []).length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <h2 className="text-sm font-semibold text-gray-800 mb-4">Monthly Billed (Last 6 Months)</h2>
-          <div className="space-y-2">
-            {(stats?.revenueChart ?? []).map((row: any) => {
-              const maxSen = Math.max(...(stats?.revenueChart ?? []).map((r: any) => Number(r.billed_sen)), 1)
-              const pct = Math.max(Math.round(Number(row.billed_sen) / maxSen * 100), 2)
-              return (
-                <div key={row.month} className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500 w-14 flex-shrink-0">{row.month}</span>
-                  <div className="flex-1 bg-gray-100 rounded-full h-2">
-                    <div className="bg-brand-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="text-xs font-medium text-gray-700 w-24 text-right">{formatRinggit(Number(row.billed_sen))}</span>
+      {/* Monthly Revenue Chart */}
+      {(stats?.revenueChart ?? []).length > 0 && (() => {
+        const chart = stats?.revenueChart ?? []
+        const maxSen = Math.max(...chart.map((r: any) => Math.max(Number(r.billed_sen), Number(r.collected_sen))), 1)
+        return (
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-sm font-semibold text-gray-800">Revenue (Last 6 Months)</h2>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-brand-500" />
+                  <span className="text-[11px] text-gray-500">Billed</span>
                 </div>
-              )
-            })}
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+                  <span className="text-[11px] text-gray-500">Collected</span>
+                </div>
+              </div>
+            </div>
+            {/* Bar chart */}
+            <div className="flex items-end gap-2 h-40">
+              {chart.map((row: any) => {
+                const billedPct = Math.max(Math.round(Number(row.billed_sen) / maxSen * 100), 2)
+                const collectedPct = Math.max(Math.round(Number(row.collected_sen) / maxSen * 100), 2)
+                return (
+                  <div key={row.month} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full flex items-end justify-center gap-0.5" style={{ height: '128px' }}>
+                      <div className="w-[40%] bg-brand-400 rounded-t transition-all hover:bg-brand-500" style={{ height: `${billedPct}%` }} title={`Billed: ${formatRinggit(Number(row.billed_sen))}`} />
+                      <div className="w-[40%] bg-emerald-400 rounded-t transition-all hover:bg-emerald-500" style={{ height: `${collectedPct}%` }} title={`Collected: ${formatRinggit(Number(row.collected_sen))}`} />
+                    </div>
+                    <span className="text-[10px] text-gray-400 mt-1">{row.month}</span>
+                  </div>
+                )
+              })}
+            </div>
+            {/* Summary row */}
+            <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-50">
+              <div>
+                <span className="text-xs text-gray-400">Total Billed</span>
+                <p className="text-sm font-semibold text-gray-800">{formatRinggit(chart.reduce((s: number, r: any) => s + Number(r.billed_sen), 0))}</p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-gray-400">Total Collected</span>
+                <p className="text-sm font-semibold text-emerald-600">{formatRinggit(chart.reduce((s: number, r: any) => s + Number(r.collected_sen), 0))}</p>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

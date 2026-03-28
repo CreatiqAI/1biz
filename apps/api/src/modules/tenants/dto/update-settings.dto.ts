@@ -18,4 +18,15 @@ export class UpdateTenantSettingsDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(12) fiscalYearStart?: number
   @ApiPropertyOptional() @IsOptional() @IsString() invoicePrefix?: string
   @ApiPropertyOptional() @IsOptional() @IsString() quotePrefix?: string
+  // MyInvois e-Invoicing
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisClientId?: string
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisClientSecret?: string
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisTin?: string
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisBrn?: string
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisMsicCode?: string
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisBusinessDesc?: string
+  @ApiPropertyOptional() @IsOptional() @IsString() myinvoisEnvironment?: string
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() myinvoisEnabled?: boolean
+  // AI Chat usage cap
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) aiMessageLimit?: number
 }

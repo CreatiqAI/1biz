@@ -41,5 +41,23 @@ export interface UserProfile {
   tenantId: string
   isActive: boolean
   isSuperAdmin?: boolean
+  enabledModules: string[]
   createdAt: string
+}
+
+export enum AppModule {
+  ACCOUNTING = 'ACCOUNTING',
+  INVENTORY = 'INVENTORY',
+  HR = 'HR',
+  PAYROLL = 'PAYROLL',
+  CRM = 'CRM',
+  POS = 'POS',
+}
+
+/** Which modules each flat plan includes */
+export const PLAN_MODULES: Record<string, AppModule[]> = {
+  STARTER: [AppModule.ACCOUNTING, AppModule.INVENTORY],
+  GROWTH: [AppModule.ACCOUNTING, AppModule.INVENTORY, AppModule.CRM, AppModule.HR],
+  BUSINESS: [AppModule.ACCOUNTING, AppModule.INVENTORY, AppModule.CRM, AppModule.HR, AppModule.PAYROLL],
+  ENTERPRISE: Object.values(AppModule),
 }

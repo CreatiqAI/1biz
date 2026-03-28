@@ -19,12 +19,14 @@ import { TaxController } from './tax.controller'
 import { TaxService } from './tax.service'
 import { ComplianceController } from './compliance.controller'
 import { ComplianceService } from './compliance.service'
+import { MyInvoisController } from './myinvois.controller'
+import { MyInvoisService } from './myinvois.service'
 import { InventoryModule } from '../inventory/inventory.module'
 
 @Module({
   imports: [InventoryModule],
-  controllers: [AccountsController, ContactsController, InvoicesController, PaymentsController, BillsController, ReportsController, JournalsController, BankingController, TaxController, ComplianceController],
-  providers: [AccountsService, ContactsService, InvoicesService, PaymentsService, BillsService, ReportsService, JournalsService, BankingService, TaxService, ComplianceService],
-  exports: [AccountsService, ContactsService, InvoicesService, PaymentsService, BillsService, ReportsService, JournalsService, BankingService, TaxService, ComplianceService],
+  controllers: [AccountsController, ContactsController, InvoicesController, PaymentsController, BillsController, ReportsController, JournalsController, BankingController, TaxController, ComplianceController, MyInvoisController],
+  providers: [AccountsService, ContactsService, InvoicesService, PaymentsService, BillsService, ReportsService, JournalsService, BankingService, TaxService, ComplianceService, MyInvoisService],
+  exports: [AccountsService, ContactsService, InvoicesService, PaymentsService, BillsService, ReportsService, JournalsService, BankingService, TaxService, ComplianceService, MyInvoisService],
 })
 export class AccountingModule {}

@@ -104,9 +104,12 @@ CREATE TABLE IF NOT EXISTS "{{SCHEMA}}".invoices (
   sst_rate DECIMAL(5, 2),
   notes TEXT,
   terms TEXT,
-  myinvois_id VARCHAR(255), -- LHDN e-invoice UUID
-  myinvois_status VARCHAR(50), -- VALID, INVALID, CANCELLED
-  myinvois_qr TEXT, -- QR code data
+  myinvois_uuid VARCHAR(255), -- LHDN e-invoice UUID (26-char)
+  myinvois_long_id TEXT, -- Long ID for QR code/validation URL
+  myinvois_submission_uid VARCHAR(255), -- Submission batch UUID
+  myinvois_status VARCHAR(50) DEFAULT 'NOT_SUBMITTED', -- NOT_SUBMITTED, PENDING, VALID, INVALID, CANCELLED
+  myinvois_validated_at TIMESTAMPTZ,
+  myinvois_errors JSONB, -- Validation errors from LHDN
   myinvois_submitted_at TIMESTAMPTZ,
   pdf_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -796,3 +799,19 @@ CREATE INDEX IF NOT EXISTS idx_compliance_type ON "{{SCHEMA}}".compliance_obliga
 CREATE INDEX IF NOT EXISTS idx_compliance_due_date ON "{{SCHEMA}}".compliance_obligations(due_date);
 CREATE INDEX IF NOT EXISTS idx_tax_codes_type ON "{{SCHEMA}}".tax_codes(tax_type);
 CREATE INDEX IF NOT EXISTS idx_tax_codes_effective ON "{{SCHEMA}}".tax_codes(effective_from);
+
+-- Composite indexes for common query patterns (status + soft-delete filtering)
+CREATE INDEX IF NOT EXISTS idx_invoices_status_deleted ON "{{SCHEMA}}".invoices(status, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_bills_status_deleted ON "{{SCHEMA}}".bills(status, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_employees_status_deleted ON "{{SCHEMA}}".employees(status, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_products_deleted ON "{{SCHEMA}}".products(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_contacts_type_deleted ON "{{SCHEMA}}".contacts(type, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_leads_status_deleted ON "{{SCHEMA}}".leads(status, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_stock_levels_product ON "{{SCHEMA}}".stock_levels(product_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON "{{SCHEMA}}".invoice_lines(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_bill_lines_bill ON "{{SCHEMA}}".bill_lines(bill_id);
+CREATE INDEX IF NOT EXISTS idx_quotation_lines_quotation ON "{{SCHEMA}}".quotation_lines(quotation_id);
+CREATE INDEX IF NOT EXISTS idx_claim_lines_claim ON "{{SCHEMA}}".claim_lines(claim_id);
+CREATE INDEX IF NOT EXISTS idx_payments_deleted ON "{{SCHEMA}}".payments(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_opportunities_stage ON "{{SCHEMA}}".opportunities(stage, deleted_at);
+CREATE INDEX IF NOT EXISTS idx_quotations_status ON "{{SCHEMA}}".quotations(status, deleted_at);

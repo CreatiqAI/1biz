@@ -15,13 +15,46 @@ export interface CreateLeadDto {
 export class LeadsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(tenantSchema: string, status?: string) {
-    const statusFilter = status ? `AND status = '${status}'` : ''
-    return this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "${tenantSchema}".leads
-       WHERE deleted_at IS NULL ${statusFilter}
-       ORDER BY created_at DESC`,
+  async findAll(tenantSchema: string, status?: string, search?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 500)
+    const params: any[] = []
+    const conditions = ['deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (status) {
+      paramIdx++
+      conditions.push(`status = $${paramIdx}`)
+      params.push(status)
+    }
+    if (search) {
+      paramIdx++
+      conditions.push(`(name ILIKE $${paramIdx} OR email ILIKE $${paramIdx} OR company ILIKE $${paramIdx})`)
+      params.push(`%${search}%`)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".leads WHERE ${where}`,
+      ...params,
     )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "${tenantSchema}".leads
+       WHERE ${where}
+       ORDER BY created_at DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
+    )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async create(tenantSchema: string, dto: CreateLeadDto, userId: string) {

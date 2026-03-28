@@ -20,15 +20,48 @@ export interface CreateContactDto {
 export class ContactsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(tenantSchema: string, type?: string) {
-    const typeFilter = type ? `AND type = '${type}'` : ''
-    return this.prisma.$queryRawUnsafe(
+  async findAll(tenantSchema: string, type?: string, search?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 500)
+    const params: any[] = []
+    const conditions = ['deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (type) {
+      paramIdx++
+      conditions.push(`type = $${paramIdx}`)
+      params.push(type)
+    }
+    if (search) {
+      paramIdx++
+      conditions.push(`(name ILIKE $${paramIdx} OR email ILIKE $${paramIdx} OR phone ILIKE $${paramIdx})`)
+      params.push(`%${search}%`)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".contacts WHERE ${where}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe(
       `SELECT id, type, name, company_name, email, phone, reg_no, tax_id,
               city, state, payment_terms, is_active
        FROM "${tenantSchema}".contacts
-       WHERE deleted_at IS NULL ${typeFilter}
-       ORDER BY name`,
+       WHERE ${where}
+       ORDER BY name
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
     )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async findOne(tenantSchema: string, id: string) {

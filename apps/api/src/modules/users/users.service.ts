@@ -50,6 +50,12 @@ export class UsersService {
 
     const passwordHash = await bcrypt.hash(newPassword, 12)
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } })
+
+    // Revoke all refresh tokens — forces re-login on all devices
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
   }
 
   async inviteUser(tenantId: string, dto: InviteUserDto) {

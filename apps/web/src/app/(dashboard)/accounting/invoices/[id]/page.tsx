@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useInvoice, useUpdateInvoiceStatus, useRecordPayment, useContacts } from '@/hooks/use-accounting'
+import { useInvoice, useUpdateInvoiceStatus, useRecordPayment, useSubmitEInvoice, useEInvoiceStatus, useCancelEInvoice } from '@/hooks/use-accounting'
 import { formatDate, formatRinggit } from '@/lib/utils'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -22,10 +22,14 @@ export default function InvoiceDetailPage() {
   const { data: invoice, isLoading, error } = useInvoice(id)
   const updateStatus = useUpdateInvoiceStatus()
   const recordPayment = useRecordPayment()
+  const submitEInvoice = useSubmitEInvoice()
+  const cancelEInvoice = useCancelEInvoice()
+  const { data: einvoiceStatus } = useEInvoiceStatus(id)
 
   const [showPayForm, setShowPayForm] = useState(false)
   const [payForm, setPayForm] = useState({ amountRM: '', method: 'BANK_TRANSFER', reference: '', notes: '' })
   const [payError, setPayError] = useState('')
+  const [einvoiceError, setEinvoiceError] = useState('')
 
   const handleMarkSent = async () => {
     await updateStatus.mutateAsync({ id, status: 'SENT' })
@@ -72,6 +76,7 @@ export default function InvoiceDetailPage() {
   }
 
   const inputClass = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-500'
+  const myinvoisStatus = einvoiceStatus?.status ?? invoice?.myinvois_status ?? 'NOT_SUBMITTED'
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -262,18 +267,132 @@ export default function InvoiceDetailPage() {
         </div>
       )}
 
-      {/* MyInvois */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-amber-800">MyInvois (LHDN e-Invoicing)</p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            {invoice.myinvois_status ? `Status: ${invoice.myinvois_status}` : 'Not submitted. Configure LHDN API credentials in Settings to enable e-invoicing.'}
-          </p>
+      {/* MyInvois E-Invoice */}
+      <div className={`rounded-xl border p-5 space-y-3 ${
+        myinvoisStatus === 'VALID' ? 'bg-green-50 border-green-200' :
+        myinvoisStatus === 'INVALID' ? 'bg-red-50 border-red-200' :
+        myinvoisStatus === 'PENDING' ? 'bg-blue-50 border-blue-200' :
+        myinvoisStatus === 'CANCELLED' ? 'bg-gray-50 border-gray-200' :
+        'bg-amber-50 border-amber-200'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className={`text-sm font-semibold ${
+              myinvoisStatus === 'VALID' ? 'text-green-800' :
+              myinvoisStatus === 'INVALID' ? 'text-red-800' :
+              myinvoisStatus === 'PENDING' ? 'text-blue-800' :
+              myinvoisStatus === 'CANCELLED' ? 'text-gray-600' :
+              'text-amber-800'
+            }`}>
+              MyInvois (LHDN e-Invoicing)
+            </p>
+            <p className={`text-xs mt-0.5 ${
+              myinvoisStatus === 'VALID' ? 'text-green-700' :
+              myinvoisStatus === 'INVALID' ? 'text-red-700' :
+              myinvoisStatus === 'PENDING' ? 'text-blue-700' :
+              myinvoisStatus === 'CANCELLED' ? 'text-gray-500' :
+              'text-amber-700'
+            }`}>
+              {myinvoisStatus === 'VALID' && 'E-invoice validated by LHDN'}
+              {myinvoisStatus === 'INVALID' && 'E-invoice rejected by LHDN — check errors below'}
+              {myinvoisStatus === 'PENDING' && 'Submitted — waiting for LHDN validation...'}
+              {myinvoisStatus === 'CANCELLED' && 'E-invoice cancelled'}
+              {myinvoisStatus === 'NOT_SUBMITTED' && 'Not yet submitted to LHDN'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {myinvoisStatus === 'VALID' && einvoiceStatus?.validationUrl && (
+              <a
+                href={einvoiceStatus.validationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs bg-green-100 hover:bg-green-200 text-green-800 font-medium px-3 py-1.5 rounded-lg"
+              >
+                View on LHDN
+              </a>
+            )}
+            {myinvoisStatus === 'VALID' && (
+              <button
+                onClick={async () => {
+                  if (!confirm('Cancel this e-invoice on LHDN? This cannot be undone.')) return
+                  setEinvoiceError('')
+                  try { await cancelEInvoice.mutateAsync(id) } catch (err: any) { setEinvoiceError(err?.response?.data?.message ?? 'Failed to cancel') }
+                }}
+                disabled={cancelEInvoice.isPending}
+                className="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-medium px-3 py-1.5 rounded-lg disabled:opacity-50"
+              >
+                {cancelEInvoice.isPending ? 'Cancelling...' : 'Cancel E-Invoice'}
+              </button>
+            )}
+            {myinvoisStatus === 'NOT_SUBMITTED' && ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(invoice.status) && (
+              <button
+                onClick={async () => {
+                  setEinvoiceError('')
+                  try { await submitEInvoice.mutateAsync(id) } catch (err: any) { setEinvoiceError(err?.response?.data?.message ?? 'Failed to submit') }
+                }}
+                disabled={submitEInvoice.isPending}
+                className="text-xs bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50"
+              >
+                {submitEInvoice.isPending ? 'Submitting...' : 'Submit to LHDN'}
+              </button>
+            )}
+            {myinvoisStatus === 'NOT_SUBMITTED' && invoice.status === 'DRAFT' && (
+              <span className="text-xs text-amber-600">Mark invoice as Sent first</span>
+            )}
+            {myinvoisStatus === 'PENDING' && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-blue-700 font-medium">
+                <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                Validating...
+              </span>
+            )}
+          </div>
         </div>
-        {!invoice.myinvois_status && (
-          <button className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium px-3 py-1.5 rounded-lg" disabled>
-            Submit to LHDN
-          </button>
+
+        {einvoiceError && (
+          <p className="text-xs text-red-600 bg-red-100 px-3 py-2 rounded-lg">{einvoiceError}</p>
+        )}
+
+        {/* Details row for submitted invoices */}
+        {myinvoisStatus !== 'NOT_SUBMITTED' && einvoiceStatus && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-current/10">
+            {einvoiceStatus.uuid && (
+              <div>
+                <p className="text-[10px] font-medium opacity-60 uppercase">Document UUID</p>
+                <p className="text-xs font-mono mt-0.5 break-all">{einvoiceStatus.uuid}</p>
+              </div>
+            )}
+            {einvoiceStatus.submissionUid && (
+              <div>
+                <p className="text-[10px] font-medium opacity-60 uppercase">Submission ID</p>
+                <p className="text-xs font-mono mt-0.5 break-all">{einvoiceStatus.submissionUid}</p>
+              </div>
+            )}
+            {einvoiceStatus.validatedAt && (
+              <div>
+                <p className="text-[10px] font-medium opacity-60 uppercase">Validated At</p>
+                <p className="text-xs mt-0.5">{new Date(einvoiceStatus.validatedAt).toLocaleString('en-MY')}</p>
+              </div>
+            )}
+            {einvoiceStatus.submittedAt && (
+              <div>
+                <p className="text-[10px] font-medium opacity-60 uppercase">Submitted At</p>
+                <p className="text-xs mt-0.5">{new Date(einvoiceStatus.submittedAt).toLocaleString('en-MY')}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Validation errors */}
+        {myinvoisStatus === 'INVALID' && einvoiceStatus?.errors && (
+          <div className="bg-red-100 rounded-lg p-3 space-y-1">
+            <p className="text-xs font-semibold text-red-800">Validation Errors:</p>
+            {(Array.isArray(einvoiceStatus.errors) ? einvoiceStatus.errors : [einvoiceStatus.errors]).map((err: any, i: number) => (
+              <p key={i} className="text-xs text-red-700">
+                {typeof err === 'string' ? err : (err.message || err.propertyName || JSON.stringify(err))}
+              </p>
+            ))}
+          </div>
         )}
       </div>
     </div>

@@ -1,5 +1,6 @@
-import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common'
+import { Injectable, Logger, HttpException, HttpStatus, ForbiddenException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { PrismaService } from '../../prisma/prisma.service'
 import Anthropic from '@anthropic-ai/sdk'
 import type { MessageParam, ContentBlockParam, ToolResultBlockParam, Message } from '@anthropic-ai/sdk/resources/messages'
 import { AuditService } from '../audit/audit.service'
@@ -25,6 +26,7 @@ import { ReportsService } from '../accounting/reports.service'
 import { BankingService } from '../accounting/banking.service'
 import { TaxService } from '../accounting/tax.service'
 import { ComplianceService } from '../accounting/compliance.service'
+import { MyInvoisService } from '../accounting/myinvois.service'
 import { DashboardService } from '../dashboard/dashboard.service'
 import { CHAT_TOOLS, ToolName } from './chat-tools'
 import { buildSystemPrompt } from './chat-system-prompt'
@@ -77,6 +79,7 @@ export class ChatService {
 
   constructor(
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly invoicesService: InvoicesService,
     private readonly paymentsService: PaymentsService,
@@ -100,6 +103,7 @@ export class ChatService {
     private readonly bankingService: BankingService,
     private readonly taxService: TaxService,
     private readonly complianceService: ComplianceService,
+    private readonly myinvoisService: MyInvoisService,
     private readonly dashboardService: DashboardService,
   ) {
     this.anthropic = new Anthropic({
@@ -226,6 +230,9 @@ export class ChatService {
       seed_tax_codes: 'Seeding tax codes',
       generate_monthly_obligations: 'Generating monthly obligations',
       complete_compliance_obligation: 'Completing compliance obligation',
+      get_einvoice_status: 'Checking e-invoice status',
+      submit_einvoice: 'Submitting e-invoice to LHDN',
+      cancel_einvoice: 'Cancelling e-invoice',
     }
     return map[name] || 'Processing'
   }
@@ -238,6 +245,9 @@ export class ChatService {
     onStatus?: (text: string) => void,
   ): Promise<string> {
     const emit = onStatus ?? (() => {})
+
+    // ─── AI Usage Cap ──────────────────────────────────────────────────────
+    await this.enforceAiUsageCap(tenantId)
 
     try {
       // Build messages array from history + current message
@@ -346,6 +356,41 @@ export class ChatService {
       if (err instanceof Error) this.logger.error(err.stack ?? '')
       throw err
     }
+  }
+
+  /** Enforce monthly AI message cap per tenant. Resets counter if month rolled over. */
+  private async enforceAiUsageCap(tenantId: string): Promise<void> {
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId },
+      select: { aiMessageLimit: true, aiMessagesUsed: true, aiUsageResetAt: true },
+    })
+    if (!settings) return // No settings = skip check
+
+    const now = new Date()
+    const resetAt = new Date(settings.aiUsageResetAt)
+
+    // Reset counter if we've passed the reset date (monthly)
+    if (now >= resetAt) {
+      const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      await this.prisma.tenantSettings.update({
+        where: { tenantId },
+        data: { aiMessagesUsed: 1, aiUsageResetAt: nextReset },
+      })
+      return
+    }
+
+    // Check cap (0 = unlimited)
+    if (settings.aiMessageLimit > 0 && settings.aiMessagesUsed >= settings.aiMessageLimit) {
+      throw new ForbiddenException(
+        `Monthly AI message limit reached (${settings.aiMessageLimit}). Resets on ${resetAt.toISOString().split('T')[0]}.`,
+      )
+    }
+
+    // Increment counter
+    await this.prisma.tenantSettings.update({
+      where: { tenantId },
+      data: { aiMessagesUsed: { increment: 1 } },
+    })
   }
 
   private async executeTool(
@@ -514,6 +559,10 @@ export class ChatService {
           str(input.status),
         )
 
+      // ─── E-Invoice (MyInvois) ────────────────────────────────────────────────
+      case 'get_einvoice_status':
+        return this.myinvoisService.getEInvoiceStatus(tenantSchema, str(input.invoiceId) as string)
+
       // ─── Confirmation passthrough ─────────────────────────────────────────────
       case 'confirm_action':
         this.logger.log(`confirm_action: action=${str(input.action)}, summary="${str(input.summary)?.slice(0, 80)}..."`)
@@ -581,6 +630,8 @@ export class ChatService {
       case 'seed_tax_codes':
       case 'generate_monthly_obligations':
       case 'complete_compliance_obligation':
+      case 'submit_einvoice':
+      case 'cancel_einvoice':
         return this.executeWrite(tenantSchema, userId, tenantId, name, input as Record<string, unknown>)
 
       default:
@@ -638,6 +689,8 @@ export class ChatService {
       seed_tax_codes:        { entity: 'tax_code',        auditAction: 'SEED' },
       generate_monthly_obligations: { entity: 'compliance_obligation', auditAction: 'GENERATE' },
       complete_compliance_obligation: { entity: 'compliance_obligation', auditAction: 'UPDATE' },
+      submit_einvoice:   { entity: 'invoice', auditAction: 'SUBMIT_EINVOICE' },
+      cancel_einvoice:   { entity: 'invoice', auditAction: 'CANCEL_EINVOICE' },
     }
     return map[action] ?? { entity: action, auditAction: 'CREATE' }
   }
@@ -1212,6 +1265,25 @@ export class ChatService {
           tenantSchema,
           payload.obligationId as string,
           userId,
+        )
+        break
+
+      // ─── E-Invoice (MyInvois) ─────────────────────────────────────────────
+      case 'submit_einvoice':
+        writeResult = await this.myinvoisService.submitInvoice(
+          tenantSchema,
+          tenantId,
+          payload.invoiceId as string,
+          userId,
+        )
+        break
+
+      case 'cancel_einvoice':
+        writeResult = await this.myinvoisService.cancelEInvoice(
+          tenantSchema,
+          tenantId,
+          payload.invoiceId as string,
+          (payload.reason as string) || 'Cancelled by user',
         )
         break
 

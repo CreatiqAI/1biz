@@ -22,11 +22,33 @@ export interface CreateProductDto {
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(tenantSchema: string, search?: string) {
-    const searchFilter = search
-      ? `AND (p.name ILIKE '%${search}%' OR p.sku ILIKE '%${search}%' OR p.barcode ILIKE '%${search}%')`
-      : ''
-    return this.prisma.$queryRawUnsafe(
+  async findAll(tenantSchema: string, search?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 500)
+    const params: any[] = []
+    const conditions = ['p.deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (search) {
+      paramIdx++
+      conditions.push(`(p.name ILIKE $${paramIdx} OR p.sku ILIKE $${paramIdx} OR p.barcode ILIKE $${paramIdx})`)
+      params.push(`%${search}%`)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".products p WHERE ${where}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe(
       `SELECT p.id, p.sku, p.barcode, p.name, p.type, p.unit_of_measure,
               p.cost_price_sen, p.selling_price_sen, p.sst_rate, p.track_inventory,
               p.is_active, p.reorder_point,
@@ -35,10 +57,14 @@ export class ProductsService {
        FROM "${tenantSchema}".products p
        LEFT JOIN "${tenantSchema}".product_categories c ON c.id = p.category_id
        LEFT JOIN "${tenantSchema}".stock_levels sl ON sl.product_id = p.id
-       WHERE p.deleted_at IS NULL ${searchFilter}
+       WHERE ${where}
        GROUP BY p.id, c.name
-       ORDER BY p.name`,
+       ORDER BY p.name
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
     )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async findOne(tenantSchema: string, id: string) {

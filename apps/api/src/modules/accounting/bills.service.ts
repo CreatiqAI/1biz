@@ -37,18 +37,53 @@ export class BillsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(tenantSchema: string, status?: string) {
-    const statusFilter = status ? `AND b.status = '${status}'` : ''
-    return this.prisma.$queryRawUnsafe(
+  async findAll(tenantSchema: string, status?: string, search?: string, page = 1, limit = 25) {
+    limit = Math.min(Math.max(limit, 1), 500)
+    const params: any[] = []
+    const conditions = ['b.deleted_at IS NULL']
+    let paramIdx = 0
+
+    if (status) {
+      paramIdx++
+      conditions.push(`b.status = $${paramIdx}`)
+      params.push(status)
+    }
+    if (search) {
+      paramIdx++
+      conditions.push(`(b.bill_no ILIKE $${paramIdx} OR c.name ILIKE $${paramIdx})`)
+      params.push(`%${search}%`)
+    }
+
+    const where = conditions.join(' AND ')
+    const offset = (page - 1) * limit
+
+    const countRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) as cnt FROM "${tenantSchema}".bills b
+       JOIN "${tenantSchema}".contacts c ON c.id = b.contact_id
+       WHERE ${where}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.cnt ?? 0)
+
+    paramIdx++
+    const limitParam = paramIdx
+    paramIdx++
+    const offsetParam = paramIdx
+
+    const data = await this.prisma.$queryRawUnsafe(
       `SELECT b.id, b.bill_no, b.type, b.bill_date, b.due_date, b.status,
               b.subtotal_sen, b.sst_amount_sen, b.total_sen, b.paid_sen,
               b.balance_sen, b.currency, b.reference,
               c.name as contact_name
        FROM "${tenantSchema}".bills b
        JOIN "${tenantSchema}".contacts c ON c.id = b.contact_id
-       WHERE b.deleted_at IS NULL ${statusFilter}
-       ORDER BY b.bill_date DESC`,
+       WHERE ${where}
+       ORDER BY b.bill_date DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      ...params, limit, offset,
     )
+
+    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } }
   }
 
   async findOne(tenantSchema: string, id: string) {

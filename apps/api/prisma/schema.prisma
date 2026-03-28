@@ -28,9 +28,11 @@ model Tenant {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  pricingModel PricingModel @default(FLAT) // FLAT = plan-based, MODULAR = pick modules
   users        TenantUser[]
   subscription Subscription?
   settings     TenantSettings?
+  modules      TenantModule[]
 
   @@map("tenants")
   @@schema("public")
@@ -119,6 +121,19 @@ model TenantSettings {
   quoteNextNumber      Int      @default(1)
   poPrefix             String   @default("PO")
   poNextNumber         Int      @default(1)
+  // MyInvois e-Invoicing (LHDN)
+  myinvoisClientId     String?  // OAuth2 client ID from LHDN portal
+  myinvoisClientSecret String?  // OAuth2 client secret
+  myinvoisTin          String?  // Company Tax Identification Number
+  myinvoisBrn          String?  // Business Registration Number (SSM)
+  myinvoisMsicCode     String?  // 5-digit MSIC code
+  myinvoisBusinessDesc String?  // Business activity description
+  myinvoisEnvironment  String   @default("SANDBOX") // SANDBOX or PRODUCTION
+  myinvoisEnabled      Boolean  @default(false)
+  // AI Chat usage caps
+  aiMessageLimit       Int      @default(500) // max AI messages per month (0 = unlimited)
+  aiMessagesUsed       Int      @default(0)   // messages used this billing period
+  aiUsageResetAt       DateTime @default(now()) // when to reset the counter
   updatedAt            DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -175,5 +190,57 @@ enum BillingCycle {
   MONTHLY
   YEARLY
 
+  @@schema("public")
+}
+
+enum PricingModel {
+  FLAT     // Plan-based (Starter/Growth/Business)
+  MODULAR  // Pick individual modules
+
+  @@schema("public")
+}
+
+enum AppModule {
+  ACCOUNTING
+  INVENTORY
+  HR
+  PAYROLL
+  CRM
+  POS
+
+  @@schema("public")
+}
+
+/// Module pricing catalog
+model ModulePricing {
+  id           String    @id @default(uuid())
+  module       AppModule @unique
+  name         String
+  description  String?
+  monthlyPrice Decimal   @db.Decimal(10, 2)
+  yearlyPrice  Decimal   @db.Decimal(10, 2)
+  isActive     Boolean   @default(true)
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("module_pricing")
+  @@schema("public")
+}
+
+/// Which modules a tenant has enabled
+model TenantModule {
+  id         String    @id @default(uuid())
+  tenantId   String
+  module     AppModule
+  isActive   Boolean   @default(true)
+  enabledAt  DateTime  @default(now())
+  disabledAt DateTime?
+  enabledBy  String?   // userId who enabled it
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, module])
+  @@map("tenant_modules")
   @@schema("public")
 }
