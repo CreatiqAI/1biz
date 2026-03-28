@@ -292,7 +292,7 @@ export class ChatService {
         const response = await this.callAnthropic({
           model: 'claude-sonnet-4-6',
           max_tokens: 2048,
-          system: buildSystemPrompt(),
+          system: buildSystemPrompt(enabledModules),
           tools,
           messages,
         })
@@ -365,7 +365,7 @@ export class ChatService {
       const finalResponse = await this.callAnthropic({
         model: 'claude-sonnet-4-6',
         max_tokens: 2048,
-        system: buildSystemPrompt(),
+        system: buildSystemPrompt(enabledModules),
         messages,
       })
       const textBlocks = finalResponse.content.filter((b) => b.type === 'text')
