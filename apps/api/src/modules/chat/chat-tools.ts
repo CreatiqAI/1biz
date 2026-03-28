@@ -1,5 +1,52 @@
 import type { Tool } from '@anthropic-ai/sdk/resources/messages'
 
+/** Maps each tool to the module(s) it requires. Tools without a mapping are always available. */
+export const TOOL_MODULE_MAP: Partial<Record<ToolName, string>> = {
+  // Accounting
+  get_invoices: 'ACCOUNTING', get_payments: 'ACCOUNTING', get_contacts: 'ACCOUNTING',
+  get_journals: 'ACCOUNTING', get_bills: 'ACCOUNTING', get_trial_balance: 'ACCOUNTING',
+  get_profit_loss: 'ACCOUNTING', get_balance_sheet: 'ACCOUNTING', get_ar_aging: 'ACCOUNTING',
+  get_ap_aging: 'ACCOUNTING', get_bank_accounts: 'ACCOUNTING', get_bank_transactions: 'ACCOUNTING',
+  get_tax_codes: 'ACCOUNTING', get_compliance_dashboard: 'ACCOUNTING', get_compliance_obligations: 'ACCOUNTING',
+  create_contact: 'ACCOUNTING', create_invoice: 'ACCOUNTING', update_invoice_status: 'ACCOUNTING',
+  record_payment: 'ACCOUNTING', create_journal_entry: 'ACCOUNTING', post_journal_entry: 'ACCOUNTING',
+  reverse_journal_entry: 'ACCOUNTING', create_bill: 'ACCOUNTING', approve_bill: 'ACCOUNTING',
+  pay_bill: 'ACCOUNTING', create_credit_note: 'ACCOUNTING', create_debit_note: 'ACCOUNTING',
+  create_bank_account: 'ACCOUNTING', create_bank_transaction: 'ACCOUNTING', match_bank_transaction: 'ACCOUNTING',
+  seed_tax_codes: 'ACCOUNTING', generate_monthly_obligations: 'ACCOUNTING', complete_compliance_obligation: 'ACCOUNTING',
+  get_einvoice_status: 'ACCOUNTING', submit_einvoice: 'ACCOUNTING', cancel_einvoice: 'ACCOUNTING',
+  // Inventory
+  get_products: 'INVENTORY', get_low_stock: 'INVENTORY', get_warehouses: 'INVENTORY',
+  get_stock_movements: 'INVENTORY', create_product: 'INVENTORY', record_stock_movement: 'INVENTORY',
+  // HR
+  get_employees: 'HR', get_departments: 'HR', get_leave_types: 'HR', get_leave_balances: 'HR',
+  get_leave_requests: 'HR', get_holidays: 'HR', get_work_entries: 'HR', get_monthly_attendance: 'HR',
+  get_attendance_summary: 'HR', get_claims: 'HR', get_claim_types: 'HR', get_employment_history: 'HR',
+  create_employee: 'HR', update_employee: 'HR', update_employee_status: 'HR', create_department: 'HR',
+  submit_leave_request: 'HR', approve_leave_request: 'HR', reject_leave_request: 'HR',
+  create_holiday: 'HR', seed_holidays: 'HR', record_work_entry: 'HR',
+  submit_claim: 'HR', approve_claim: 'HR', reject_claim: 'HR',
+  record_job_change: 'HR', calculate_termination: 'HR', process_termination: 'HR', init_leave_balances: 'HR',
+  // Payroll
+  get_payroll_runs: 'PAYROLL', get_payroll_items: 'PAYROLL',
+  create_payroll_run: 'PAYROLL', generate_payroll_items: 'PAYROLL',
+  approve_payroll_run: 'PAYROLL', mark_payroll_paid: 'PAYROLL',
+  // CRM
+  get_leads: 'CRM', get_opportunities: 'CRM', get_quotations: 'CRM',
+  create_lead: 'CRM', update_lead_status: 'CRM', create_opportunity: 'CRM',
+  update_opportunity_stage: 'CRM', create_quotation: 'CRM', update_quotation_status: 'CRM',
+  convert_quotation_to_invoice: 'CRM',
+}
+
+/** Filter tools to only those the tenant has access to */
+export function filterToolsByModules(tools: Tool[], enabledModules: string[]): Tool[] {
+  return tools.filter((tool) => {
+    const requiredModule = TOOL_MODULE_MAP[tool.name as ToolName]
+    if (!requiredModule) return true // dashboard, confirm_action, etc. — always available
+    return enabledModules.includes(requiredModule)
+  })
+}
+
 export type ToolName =
   // ─── Read tools ───────────────────────────────────────────────────────────
   | 'get_dashboard_stats'

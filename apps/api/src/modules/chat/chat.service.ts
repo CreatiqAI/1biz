@@ -28,7 +28,8 @@ import { TaxService } from '../accounting/tax.service'
 import { ComplianceService } from '../accounting/compliance.service'
 import { MyInvoisService } from '../accounting/myinvois.service'
 import { DashboardService } from '../dashboard/dashboard.service'
-import { CHAT_TOOLS, ToolName } from './chat-tools'
+import { CHAT_TOOLS, ToolName, filterToolsByModules } from './chat-tools'
+import { PLAN_MODULES } from '@1biz/shared'
 import { buildSystemPrompt } from './chat-system-prompt'
 
 export interface ChatMessage {
@@ -249,6 +250,25 @@ export class ChatService {
     // ─── AI Usage Cap ──────────────────────────────────────────────────────
     await this.enforceAiUsageCap(tenantId)
 
+    // ─── Resolve enabled modules → filter AI tools ──────────────────────
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { plan: true, pricingModel: true },
+    })
+    let enabledModules: string[] = []
+    if (tenant) {
+      if (tenant.pricingModel === 'MODULAR') {
+        const mods = await this.prisma.tenantModule.findMany({
+          where: { tenantId, isActive: true },
+          select: { module: true },
+        })
+        enabledModules = mods.map((m) => m.module)
+      } else {
+        enabledModules = PLAN_MODULES[tenant.plan] ?? []
+      }
+    }
+    const tools = filterToolsByModules(CHAT_TOOLS, enabledModules)
+
     try {
       // Build messages array from history + current message
       const messages: MessageParam[] = [
@@ -266,14 +286,14 @@ export class ChatService {
 
       while (turn < MAX_TURNS) {
         const turnStart = Date.now()
-        this.logger.log(`[Chat] Turn ${turn} — calling Anthropic (messages: ${messages.length})...`)
+        this.logger.log(`[Chat] Turn ${turn} — calling Anthropic (messages: ${messages.length}, tools: ${tools.length})...`)
         emit('Thinking...')
 
         const response = await this.callAnthropic({
           model: 'claude-sonnet-4-6',
           max_tokens: 2048,
           system: buildSystemPrompt(),
-          tools: CHAT_TOOLS,
+          tools,
           messages,
         })
 
