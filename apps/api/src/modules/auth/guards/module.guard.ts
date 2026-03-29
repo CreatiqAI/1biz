@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core'
 import { AppModule, PricingModel } from '@prisma/client'
 import { MODULES_KEY } from '../decorators/modules.decorator'
 import { PrismaService } from '../../../prisma/prisma.service'
-import { SystemRole, PLAN_MODULES, AppModule as SharedAppModule } from '@1biz/shared'
+import { SystemRole, PLAN_MODULES } from '@1biz/shared'
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
@@ -37,7 +37,7 @@ export class ModuleGuard implements CanActivate {
 
     let enabledModules: string[]
 
-    if (tenant.pricingModel === PricingModel.FLAT) {
+    if (!tenant.pricingModel || tenant.pricingModel === PricingModel.FLAT) {
       // Derive modules from plan
       enabledModules = PLAN_MODULES[tenant.plan] ?? []
     } else {
