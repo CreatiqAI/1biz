@@ -24,7 +24,8 @@ export class BillsController {
   @ApiOperation({ summary: 'List bills' })
   @ApiQuery({ name: 'status', required: false })
   async findAll(@CurrentUser() user: CurrentUserData, @Query('status') status?: string) {
-    return { success: true, data: await this.billsService.findAll(user.tenantSchema, status) }
+    const result = await this.billsService.findAll(user.tenantSchema, status)
+    return { success: true, ...result }
   }
 
   @Get(':id')

@@ -23,7 +23,8 @@ export class ProductsController {
   @RequirePermissions(Permission.INVENTORY_VIEW)
   @ApiOperation({ summary: 'List all products' })
   async findAll(@CurrentUser() user: CurrentUserData, @Query('search') search?: string) {
-    return { success: true, data: await this.productsService.findAll(user.tenantSchema, search) }
+    const result = await this.productsService.findAll(user.tenantSchema, search)
+    return { success: true, ...result }
   }
 
   @Get(':id')

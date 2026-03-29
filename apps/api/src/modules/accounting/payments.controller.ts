@@ -23,7 +23,8 @@ export class PaymentsController {
   @RequirePermissions(Permission.ACCOUNTING_VIEW)
   @ApiOperation({ summary: 'List all payments' })
   async findAll(@CurrentUser() user: CurrentUserData, @Query('type') type?: string) {
-    return { success: true, data: await this.paymentsService.findAll(user.tenantSchema, type) }
+    const result = await this.paymentsService.findAll(user.tenantSchema, type)
+    return { success: true, ...result }
   }
 
   @Post()

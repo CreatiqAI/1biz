@@ -20,7 +20,8 @@ export class LeadsController {
   @Get()
   @ApiOperation({ summary: 'List leads' })
   async findAll(@CurrentUser() user: CurrentUserData, @Query('status') status?: string) {
-    return { success: true, data: await this.leadsService.findAll(user.tenantSchema, status) }
+    const result = await this.leadsService.findAll(user.tenantSchema, status)
+    return { success: true, ...result }
   }
 
   @Post()
